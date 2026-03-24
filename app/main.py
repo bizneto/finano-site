@@ -128,19 +128,37 @@ def verify_session(request: Request) -> bool:
 # ── WebSocket ──
 
 _ws_clients: set[WebSocket] = set()
+_ws_public: set[WebSocket] = set()
 
 async def broadcast(event_type: str, data: dict[str, Any]):
-    global _ws_clients
-    if not _ws_clients:
-        return
+    global _ws_clients, _ws_public
     msg = json.dumps({"type": event_type, "data": data, "ts": time.time()})
-    dead: set[WebSocket] = set()
-    for ws in _ws_clients:
-        try:
-            await ws.send_text(msg)
-        except Exception:
-            dead.add(ws)
-    _ws_clients -= dead
+    # Authenticated dashboard clients — full data
+    if _ws_clients:
+        dead: set[WebSocket] = set()
+        for ws in _ws_clients:
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                dead.add(ws)
+        _ws_clients -= dead
+    # Public landing clients — only safe events (counters, cms)
+    if _ws_public and event_type in ("message", "error", "cms_update"):
+        safe = {"type": event_type, "ts": time.time()}
+        if event_type == "message":
+            safe["data"] = {"user": data.get("user", "?"), "tokens": data.get("tokens", 0)}
+        elif event_type == "error":
+            safe["data"] = {"count": 1}
+        elif event_type == "cms_update":
+            safe["data"] = data
+        pub_msg = json.dumps(safe)
+        dead_pub: set[WebSocket] = set()
+        for ws in _ws_public:
+            try:
+                await ws.send_text(pub_msg)
+            except Exception:
+                dead_pub.add(ws)
+        _ws_public -= dead_pub
 
 # ── App ──
 
@@ -271,6 +289,21 @@ async def receive_event(request: Request):
     return {"ok": True}
 
 # ── WebSocket ──
+
+@app.websocket("/ws/public")
+async def ws_public(websocket: WebSocket):
+    await websocket.accept()
+    _ws_public.add(websocket)
+    try:
+        while True:
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30)
+            except asyncio.TimeoutError:
+                await websocket.send_text(json.dumps({"type": "ping", "ts": time.time()}))
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        _ws_public.discard(websocket)
 
 @app.websocket("/ws/live")
 async def ws_live(websocket: WebSocket, token: str = Query(default="")):

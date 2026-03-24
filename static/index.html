@@ -235,7 +235,27 @@ function connectWS(){if(ws&&ws.readyState<=1)return;
     if(['message','tool_call','error'].includes(msg.type))handleLiveEvent(msg)}catch(e){}}}
 
 // Init
-loadCMS(); loadStats(); setInterval(loadStats, 30000);
+loadCMS(); loadStats();
+
+// Public WebSocket for live landing stats
+let publicWS = null;
+function connectPublicWS() {
+  const url = `${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws/public`;
+  publicWS = new WebSocket(url);
+  publicWS.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'ping') return;
+      if (msg.type === 'message') {
+        const el = document.getElementById('stat-msgs');
+        if (el) el.textContent = parseInt(el.textContent || 0) + 1;
+      }
+      if (msg.type === 'cms_update' && msg.data) applyCMSUpdate(msg.data);
+    } catch(e) {}
+  };
+  publicWS.onclose = () => setTimeout(connectPublicWS, 5000);
+}
+connectPublicWS();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
 <script src="https://unpkg.com/@elevenlabs/convai-widget-embed" async type="text/javascript"></script>
