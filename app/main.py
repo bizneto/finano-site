@@ -397,6 +397,139 @@ async def dashboard_history(dash_id: str, limit: int = 50):
         rows = await cursor.fetchall()
     return {"history": [dict(r) for r in rows]}
 
+# ── Dashboard Builder API ──
+
+@app.post("/api/site/dash/kpi")
+async def api_dash_kpi(request: Request):
+    b = await request.json()
+    page_id = b.get("page_id", "main")
+    block = {"type": "kpi_row", "items": b.get("items", [])}
+    if b.get("title"): block["title"] = b["title"]
+    key = b.get("key", "kpi")
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
+@app.post("/api/site/dash/chart")
+async def api_dash_chart(request: Request):
+    b = await request.json()
+    page_id = b.get("page_id", "main")
+    key = b.get("key") or ("chart_" + b.get("title", "chart").lower().replace(" ", "_")[:20])
+    block = {"type": "chart", "chart_type": b.get("chart_type", "bar"), "title": b.get("title", ""),
+             "data": {"labels": b.get("labels", []), "datasets": b.get("datasets", [])}}
+    if b.get("stacked"): block["stacked"] = True
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
+@app.post("/api/site/dash/table")
+async def api_dash_table(request: Request):
+    b = await request.json()
+    page_id = b.get("page_id", "main")
+    key = b.get("key") or ("table_" + b.get("title", "table").lower().replace(" ", "_")[:20])
+    block = {"type": "table", "title": b.get("title", ""), "columns": b.get("columns", []),
+             "rows": b.get("rows", []), "searchable": b.get("searchable", True),
+             "pagination": {"per_page": b.get("page_size", 10), "total": len(b.get("rows", []))}}
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
+@app.post("/api/site/dash/timeline")
+async def api_dash_timeline(request: Request):
+    b = await request.json()
+    page_id, key = b.get("page_id", "main"), b.get("key", "timeline")
+    block = {"type": "timeline", "title": b.get("title", ""), "items": b.get("items", [])}
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
+@app.post("/api/site/dash/alert")
+async def api_dash_alert(request: Request):
+    b = await request.json()
+    page_id, key = b.get("page_id", "main"), b.get("key", "alert")
+    block = {"type": "alert", "alert_type": b.get("alert_type", "info"), "text": b.get("text", "")}
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
+@app.post("/api/site/dash/progress")
+async def api_dash_progress(request: Request):
+    b = await request.json()
+    page_id, key = b.get("page_id", "main"), b.get("key", "progress")
+    block = {"type": "progress", "title": b.get("title", ""), "items": b.get("items", [])}
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
+@app.post("/api/site/dash/status")
+async def api_dash_status(request: Request):
+    b = await request.json()
+    page_id, key = b.get("page_id", "main"), b.get("key", "status")
+    block = {"type": "status", "title": b.get("title", ""), "items": b.get("items", [])}
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
+@app.post("/api/site/dash/markdown")
+async def api_dash_markdown(request: Request):
+    b = await request.json()
+    page_id, key = b.get("page_id", "main"), b.get("key", "text")
+    block = {"type": "markdown", "content": b.get("content", "")}
+    if b.get("title"): block["title"] = b["title"]
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
+@app.post("/api/site/dash/code")
+async def api_dash_code(request: Request):
+    b = await request.json()
+    page_id, key = b.get("page_id", "main"), b.get("key", "code")
+    block = {"type": "code", "code": b.get("code", ""), "language": b.get("language", "python")}
+    if b.get("title"): block["title"] = b["title"]
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
+@app.post("/api/site/dash/menu")
+async def api_dash_menu(request: Request):
+    b = await request.json()
+    page_id = b.get("page_id", "main")
+    await db_set_content("_menu", json.dumps(b.get("items", [])), page_id)
+    await broadcast("cms_update", {"key": "_menu", "value": json.dumps(b.get("items", [])), "page_id": page_id})
+    return {"success": True, "key": "_menu", "page_id": page_id}
+
+@app.post("/api/site/dash/config")
+async def api_dash_config(request: Request):
+    b = await request.json()
+    page_id = b.get("page_id", "main")
+    cfg = {k: v for k, v in b.items() if k in ("title", "theme_brand", "theme_accent", "theme_dark", "auto_refresh", "show_header", "show_footer") and v is not None}
+    await db_set_content("_config", json.dumps(cfg), page_id)
+    await broadcast("cms_update", {"key": "_config", "value": json.dumps(cfg), "page_id": page_id})
+    return {"success": True, "key": "_config", "page_id": page_id}
+
+@app.post("/api/site/dash/build-report")
+async def api_dash_build_report(request: Request):
+    b = await request.json()
+    page_id, title = b.get("page_id", "report"), b.get("title", "Report")
+    blocks = []
+    await db_set_content("_config", json.dumps({"title": title}), page_id)
+    if b.get("alert_text"):
+        await db_set_content("alert", json.dumps({"type":"alert","alert_type":b.get("alert_type","info"),"text":b["alert_text"]}), page_id)
+        blocks.append("alert")
+    if b.get("kpi"):
+        await db_set_content("kpi", json.dumps({"type":"kpi_row","items":b["kpi"]}), page_id)
+        blocks.append("kpi")
+    if b.get("chart_type") and b.get("chart_labels") and b.get("chart_datasets"):
+        await db_set_content("chart", json.dumps({"type":"chart","chart_type":b["chart_type"],"title":title,"data":{"labels":b["chart_labels"],"datasets":b["chart_datasets"]}}), page_id)
+        blocks.append("chart")
+    if b.get("table_columns") and b.get("table_rows"):
+        await db_set_content("table", json.dumps({"type":"table","title":title,"columns":b["table_columns"],"rows":b["table_rows"],"pagination":{"per_page":10,"total":len(b["table_rows"])}}), page_id)
+        blocks.append("table")
+    if b.get("timeline_items"):
+        await db_set_content("timeline", json.dumps({"type":"timeline","title":"Zdarzenia","items":b["timeline_items"]}), page_id)
+        blocks.append("timeline")
+    return {"success": True, "page_id": page_id, "url": f"https://finano.ai/d/{page_id}", "blocks": blocks}
+
 # ── Event webhook (bot pushes events here) ──
 
 @app.post("/api/site/event")
