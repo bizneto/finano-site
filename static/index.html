@@ -12,6 +12,7 @@
 <link rel="icon" href="/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
 :root{--brand:#6366f1;--dark:#0f172a;--card:#1e293b;--accent:#22d3ee}
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -99,6 +100,8 @@ tailwind.config={theme:{extend:{colors:{
 
 <script>
 const API=location.origin, content={};
+function getPageId(){const m=location.pathname.match(/^\/d\/(.+)/);return m?m[1]:'main'}
+let currentPage=getPageId();
 let authToken=localStorage.getItem('finano_token'), ws=null, publicWS=null;
 
 const SECTION_ORDER=['announcement','hero','stats','features','services_status','hero_buttons','widgets','footer_text'];
@@ -109,6 +112,104 @@ function h(){return authToken?{Authorization:'Bearer '+authToken}:{}}
 async function f(p,o){try{const r=await fetch(API+p,o||{});if(r.status===401){doLogout();return null}return r.json()}catch{return null}}
 
 // ── Section renderers ──
+// ── Typed block renderers ──
+const blockRenderers = {
+  kpi_row(k,d) {
+    const items = d.items || [];
+    return '<div class="grid grid-cols-2 md:grid-cols-'+Math.min(items.length,4)+' gap-4 w-full">'+items.map(i=>{
+      const colors={primary:'var(--brand)',success:'#22c55e',danger:'#ef4444',warning:'#eab308',accent:'var(--accent)'};
+      const c=colors[i.color]||'var(--accent)';
+      return '<div class="glass rounded-xl p-4 text-center fade-in">'
+        +(i.trend?'<div class="text-xs '+(i.trend>0?'text-green-400':'text-red-400')+' mb-1">'+(i.trend>0?'↑':'↓')+Math.abs(i.trend)+'%</div>':'')
+        +'<div class="text-2xl font-bold" style="color:'+c+'">'+(i.pulse?'<span class="pulse-dot">':'')+i.value+(i.pulse?'</span>':'')+'</div>'
+        +'<div class="text-xs text-gray-400 mt-1">'+(i.icon||'')+' '+i.label+'</div></div>';
+    }).join('')+'</div>';
+  },
+
+  chart(k,d) {
+    const id='chart_'+k.replace(/\W/g,'_');
+    setTimeout(()=>{
+      const el=document.getElementById(id);
+      if(!el||!window.Chart) return;
+      new Chart(el,{type:d.chart_type||'bar',data:d.data||{},
+        options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8'}},title:{display:!!d.title,text:d.title||'',color:'#e2e8f0'}},
+        scales:{x:{ticks:{color:'#64748b'},grid:{color:'rgba(255,255,255,.05)'}},y:{ticks:{color:'#64748b'},grid:{color:'rgba(255,255,255,.05)'}}}}});
+    },100);
+    return '<div class="glass rounded-xl p-4 w-full fade-in"><canvas id="'+id+'" height="200"></canvas></div>';
+  },
+
+  table(k,d) {
+    const cols=d.columns||[], rows=d.rows||[];
+    return '<div class="glass rounded-xl p-4 w-full fade-in overflow-x-auto">'
+      +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3">'+d.title+'</h3>':'')
+      +'<table class="w-full text-sm"><thead><tr>'+cols.map(c=>'<th class="text-left p-2 text-gray-400 border-b border-white/5">'+c+'</th>').join('')+'</tr></thead>'
+      +'<tbody>'+rows.map(r=>'<tr class="hover:bg-white/5">'+
+        (Array.isArray(r)?r:Object.values(r)).map(v=>'<td class="p-2 text-gray-300">'+v+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
+  },
+
+  timeline(k,d) {
+    const items=d.items||[];
+    const colors={primary:'var(--brand)',success:'#22c55e',danger:'#ef4444',warning:'#eab308'};
+    return '<div class="glass rounded-xl p-4 w-full fade-in">'
+      +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3">'+d.title+'</h3>':'')
+      +'<div class="space-y-3">'+items.map(i=>{
+        const c=colors[i.color]||'var(--accent)';
+        return '<div class="flex gap-3 items-start"><div class="w-8 h-8 rounded-full flex items-center justify-center text-xs flex-shrink-0" style="background:color-mix(in srgb,'+c+' 20%,transparent);color:'+c+'">'+(i.icon||'•')+'</div>'
+          +'<div><div class="text-sm font-medium">'+i.title+'</div><div class="text-xs text-gray-500">'+i.time+'</div>'+(i.description?'<div class="text-xs text-gray-400 mt-1">'+i.description+'</div>':'')+'</div></div>';
+      }).join('')+'</div></div>';
+  },
+
+  progress(k,d) {
+    const pct=Math.min(100,Math.max(0,d.value||0));
+    const colors={primary:'var(--brand)',success:'#22c55e',danger:'#ef4444',warning:'#eab308'};
+    const c=colors[d.color]||'var(--brand)';
+    return '<div class="glass rounded-xl p-4 w-full fade-in">'
+      +(d.title?'<div class="flex justify-between text-sm mb-2"><span class="text-gray-300">'+d.title+'</span><span style="color:'+c+'">'+pct+'%</span></div>':'')
+      +'<div class="h-2 rounded-full bg-white/5"><div class="h-full rounded-full transition-all" style="width:'+pct+'%;background:'+c+'"></div></div></div>';
+  },
+
+  markdown(k,d) {
+    return '<div class="glass rounded-xl p-4 w-full fade-in prose prose-invert prose-sm max-w-none">'+(d.content||'').replace(/\n/g,'<br>')+'</div>';
+  },
+
+  code(k,d) {
+    return '<div class="glass rounded-xl p-4 w-full fade-in">'
+      +(d.title?'<div class="text-xs text-gray-400 mb-2">'+d.title+(d.language?' — '+d.language:'')+'</div>':'')
+      +'<pre class="text-xs text-gray-300 overflow-x-auto"><code>'+((d.content||d.code||'').replace(/</g,'&lt;'))+'</code></pre></div>';
+  },
+
+  tabs(k,d) {
+    const tabs=d.tabs||[];
+    const id='tabs_'+k.replace(/\W/g,'_');
+    return '<div class="w-full fade-in" id="'+id+'">'
+      +'<div class="flex gap-1 mb-3">'+tabs.map((t,i)=>
+        '<button onclick="showTab(\''+id+'\','+i+')" class="px-3 py-1 rounded-lg text-sm '+(i===0?'bg-white/10 text-white':'text-gray-500 hover:text-white')+'" data-tab="'+i+'">'+t.label+'</button>'
+      ).join('')+'</div>'
+      +tabs.map((t,i)=>'<div class="tab-panel'+(i>0?' hidden':'')+'" data-panel="'+i+'">'+
+        (t.blocks||[]).map((b,j)=>renderSection(k+'_tab'+i+'_'+j, typeof b==='string'?b:JSON.stringify(b))).join('')
+      +'</div>').join('')+'</div>';
+  },
+
+  columns(k,d) {
+    const cols=d.columns||[];
+    return '<div class="grid grid-cols-1 md:grid-cols-'+cols.length+' gap-4 w-full fade-in">'+cols.map(col=>
+      '<div>'+col.map((b,i)=>renderSection(k+'_col_'+i, typeof b==='string'?b:JSON.stringify(b))).join('')+'</div>'
+    ).join('')+'</div>';
+  },
+
+  status(k,d) { return renderBadges(k, d.items||d); },
+  alert(k,d) { return renderAlert(k, d); },
+};
+
+function showTab(containerId, idx) {
+  const c=document.getElementById(containerId);
+  if(!c)return;
+  c.querySelectorAll('[data-tab]').forEach(b=>{b.className=b.className.replace('bg-white/10 text-white','text-gray-500 hover:text-white')});
+  c.querySelector('[data-tab="'+idx+'"]').className=c.querySelector('[data-tab="'+idx+'"]').className.replace('text-gray-500 hover:text-white','bg-white/10 text-white');
+  c.querySelectorAll('.tab-panel').forEach(p=>p.classList.add('hidden'));
+  c.querySelector('[data-panel="'+idx+'"]').classList.remove('hidden');
+}
+
 function renderSection(key, val) {
   let p=val; try{p=JSON.parse(val)}catch{}
   if(SYSTEM_KEYS.has(key)) return '';
@@ -116,6 +217,9 @@ function renderSection(key, val) {
   if(key==='hero_buttons') return renderButtons(p);
   if(key==='footer_text') return `<div class="text-center text-xs text-gray-600 w-full">${val}</div>`;
   if(key==='widgets') return ''; // widgets appended to body separately
+
+  // Typed blocks (explicit "type" field)
+  if(typeof p==='object'&&p!==null&&p.type&&blockRenderers[p.type]) return blockRenderers[p.type](key,p);
 
   // Auto-detect type
   if(typeof p==='object'&&p!==null&&p.text&&p.type) return renderAlert(key,p);
@@ -195,8 +299,29 @@ function buildPage(c) {
   const finalOrder=[...order,...extra];
 
   // Build HTML
-  let html=renderHero(c);
+  // Menu
+  let menuHtml = '';
+  if (c._menu) {
+    try {
+      const menu = JSON.parse(c._menu);
+      menuHtml = '<div class="flex gap-2 flex-wrap justify-center w-full mb-4">'+menu.map(m=>
+        '<button onclick="switchView(\''+m.view+'\',this)" class="px-4 py-2 rounded-lg text-sm bg-white/5 hover:bg-white/10 transition">'+(m.icon||'')+' '+m.label+'</button>'
+      ).join('')+'</div>';
+    } catch(e) {}
+  }
+
+  let html=renderHero(c)+menuHtml;
+  // Current view filter
+  const currentView = window._currentView || null;
+
   for(const key of finalOrder){
+    // View filtering: key with __ prefix belongs to a view
+    if (key.includes('__') && currentView) {
+      const viewName = key.split('__')[0];
+      if (viewName !== currentView) continue;
+    } else if (currentView && key.includes('__')) {
+      continue; // hide view-specific keys when no view selected
+    }
     if(!c[key]) continue;
     html+=renderSection(key,c[key]);
   }
@@ -221,16 +346,25 @@ function applyCMSUpdate(d) {
 }
 
 // ── Init ──
-async function loadCMS(){const c=await f('/api/site/content');if(!c)return;Object.assign(content,c);buildPage(content)}
+async function loadCMS(){const c=await f('/api/site/content?page_id='+currentPage);if(!c)return;Object.assign(content,c);buildPage(content)}
 async function loadStats(){const d=await f('/api/site/public-stats');if(!d)return;
   // If stats section doesn't exist yet — we'll get them from buildPage
   const el=document.getElementById('stat-msgs');if(el)el.textContent=d.messages_today||0}
+
+window._currentView = null;
+function switchView(view, btn) {
+  window._currentView = window._currentView === view ? null : view;
+  // Update button styles
+  document.querySelectorAll('[onclick^="switchView"]').forEach(b=>b.className=b.className.replace('bg-white/10','bg-white/5'));
+  if(window._currentView && btn) btn.className=btn.className.replace('bg-white/5','bg-white/10');
+  buildPage(content);
+}
 
 loadCMS();
 
 // ── Public WebSocket ──
 function connectPublicWS(){
-  const url=`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws/public`;
+  const url=`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws/public?page_id=${currentPage}`;
   publicWS=new WebSocket(url);
   publicWS.onmessage=e=>{try{const msg=JSON.parse(e.data);
     if(msg.type==='ping')return;
