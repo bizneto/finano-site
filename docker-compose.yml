@@ -1,0 +1,26 @@
+services:
+  finano-site:
+    build: .
+    container_name: finano-site
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - site-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8200/api/site/content', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  site-data:

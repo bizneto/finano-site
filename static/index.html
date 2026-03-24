@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Finano AI — inteligentny asystent AI">
+<title>Finano AI</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{brand:'var(--brand,#6366f1)',dark:'var(--dark,#0f172a)',card:'var(--card,#1e293b)',accent:'var(--accent,#22d3ee)'}}}}</script>
+<style>
+:root{--brand:#6366f1;--dark:#0f172a;--card:#1e293b;--accent:#22d3ee}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+body{font-family:'Inter',sans-serif}
+.glass{background:rgba(30,41,59,.7);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.08)}
+.pulse-dot{animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.fade-in{animation:fadeIn .3s ease-out}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+</style>
+</head>
+<body class="bg-dark text-white min-h-screen">
+
+<!-- Login -->
+<div id="login" class="min-h-screen flex items-center justify-center px-6 hidden">
+  <div class="glass rounded-2xl p-8 w-full max-w-sm">
+    <div class="flex items-center gap-3 mb-6">
+      <div class="w-10 h-10 bg-brand rounded-xl flex items-center justify-center text-lg font-bold">F</div>
+      <div><div class="font-semibold">Finano AI</div><div class="text-xs text-gray-400">Panel administracyjny</div></div>
+    </div>
+    <form onsubmit="doLogin(event)">
+      <label class="text-sm text-gray-400">Hasło</label>
+      <input type="password" id="login-pass" class="w-full mt-1 mb-4 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-brand" autofocus>
+      <label class="text-sm text-gray-400">Kod 2FA</label>
+      <input type="text" id="login-totp" inputmode="numeric" maxlength="6" class="w-full mt-1 mb-4 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-brand tracking-[0.5em] text-center text-xl" placeholder="000000">
+      <div id="login-error" class="text-red-400 text-sm mb-3 hidden"></div>
+      <button type="submit" class="w-full py-3 bg-brand rounded-xl font-medium hover:bg-brand/80 transition">Zaloguj</button>
+    </form>
+  </div>
+</div>
+
+<!-- Landing -->
+<div id="landing" class="min-h-screen flex flex-col">
+  <nav class="flex items-center justify-between px-6 py-4">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 bg-brand rounded-lg flex items-center justify-center text-sm font-bold">F</div>
+      <span class="font-semibold text-lg">Finano AI</span>
+    </div>
+    <button onclick="requireAuth()" class="text-sm px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition">Dashboard</button>
+  </nav>
+  <div class="flex-1 flex flex-col items-center justify-center px-6 text-center">
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand/10 text-brand text-sm mb-6">
+      <span class="w-2 h-2 bg-green-400 rounded-full pulse-dot"></span>
+      <span id="status-badge">Online</span>
+    </div>
+    <h1 id="hero-title" class="text-4xl md:text-6xl font-bold mb-4 leading-tight"></h1>
+    <p id="hero-desc" class="text-gray-400 text-lg md:text-xl max-w-xl mb-8"></p>
+    <div id="hero-buttons" class="flex gap-3 flex-wrap justify-center"></div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-16 w-full max-w-2xl">
+      <div class="glass rounded-xl p-4 text-center"><div id="stat-msgs" class="text-2xl font-bold text-accent">-</div><div class="text-xs text-gray-400 mt-1">Wiadomości dziś</div></div>
+      <div class="glass rounded-xl p-4 text-center"><div id="stat-tools" class="text-2xl font-bold text-brand">-</div><div class="text-xs text-gray-400 mt-1">Narzędzi</div></div>
+      <div class="glass rounded-xl p-4 text-center"><div id="stat-services" class="text-2xl font-bold text-green-400">-</div><div class="text-xs text-gray-400 mt-1">Serwisów</div></div>
+      <div class="glass rounded-xl p-4 text-center"><div id="stat-users" class="text-2xl font-bold text-orange-400">-</div><div class="text-xs text-gray-400 mt-1">Użytkowników</div></div>
+    </div>
+  </div>
+  <div id="footer-text" class="text-center text-xs text-gray-600 py-4"></div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard" class="min-h-screen hidden">
+  <nav class="flex items-center justify-between px-4 py-3 glass sticky top-0 z-50">
+    <button onclick="showLanding()" class="flex items-center gap-2">
+      <div class="w-7 h-7 bg-brand rounded-lg flex items-center justify-center text-xs font-bold">F</div>
+      <span class="font-semibold">Dashboard</span>
+    </button>
+    <div class="flex items-center gap-3">
+      <span id="ws-status" class="w-2 h-2 rounded-full bg-gray-500"></span>
+      <span class="text-xs text-gray-400" id="ws-label">Łączenie...</span>
+      <button onclick="doLogout()" class="text-xs px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10">Wyloguj</button>
+    </div>
+  </nav>
+  <div class="p-4 space-y-4 pb-20 max-w-4xl mx-auto">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="glass rounded-xl p-3"><div class="text-xs text-gray-400">Status</div><div id="d-status" class="text-lg font-bold text-green-400 mt-1">-</div></div>
+      <div class="glass rounded-xl p-3"><div class="text-xs text-gray-400">Dziś</div><div id="d-today" class="text-lg font-bold text-accent mt-1">-</div></div>
+      <div class="glass rounded-xl p-3"><div class="text-xs text-gray-400">Błędy</div><div id="d-errors" class="text-lg font-bold text-red-400 mt-1">-</div></div>
+      <div class="glass rounded-xl p-3"><div class="text-xs text-gray-400">Koszt ($)</div><div id="d-cost" class="text-lg font-bold text-yellow-400 mt-1">-</div></div>
+    </div>
+    <div class="glass rounded-xl p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">Serwisy</h3><div id="d-services" class="space-y-2 text-sm"><div class="text-gray-500">Ładowanie...</div></div></div>
+    <div class="glass rounded-xl p-4">
+      <div class="flex items-center justify-between mb-3"><h3 class="text-sm font-semibold text-gray-300">Aktywność</h3><button onclick="refreshActivity()" class="text-xs text-brand">Odśwież</button></div>
+      <div id="d-activity" class="space-y-2 max-h-96 overflow-y-auto text-sm"><div class="text-gray-500">Ładowanie...</div></div>
+    </div>
+    <div class="glass rounded-xl p-4">
+      <h3 class="text-sm font-semibold text-gray-300 mb-3"><span class="w-2 h-2 bg-red-500 rounded-full inline-block pulse-dot mr-1"></span>Live</h3>
+      <div id="d-live" class="space-y-2 max-h-64 overflow-y-auto text-sm"><div class="text-gray-500">Oczekiwanie na zdarzenia...</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = location.origin;
+const WS_URL = `${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws/live`;
+let ws = null, authToken = localStorage.getItem('finano_token');
+
+function h(t){return {'Authorization':'Bearer '+(t||authToken)}}
+
+async function f(p,o){try{const r=await fetch(API+p,o||{});if(r.status===401){doLogout();return null}return await r.json()}catch(e){return null}}
+
+// ── CMS ──
+function applyCMS(c) {
+  if(c.hero_title) document.getElementById('hero-title').innerHTML = c.hero_title+'<br><span class="text-brand">'+(c.hero_highlight||'')+'</span>';
+  if(c.hero_description) document.getElementById('hero-desc').textContent = c.hero_description;
+  if(c.footer_text) document.getElementById('footer-text').textContent = c.footer_text;
+  if(c.meta_description) document.querySelector('meta[name=description]').content = c.meta_description;
+  if(c.theme_brand) document.documentElement.style.setProperty('--brand', c.theme_brand);
+  if(c.theme_accent) document.documentElement.style.setProperty('--accent', c.theme_accent);
+  if(c.theme_dark) document.documentElement.style.setProperty('--dark', c.theme_dark);
+  if(c.hero_buttons) try{const bs=JSON.parse(c.hero_buttons);document.getElementById('hero-buttons').innerHTML=bs.map(b=>
+    b.action==='dashboard'?`<button onclick="requireAuth()" class="px-6 py-3 ${b.style==='primary'?'bg-brand':'bg-white/5'} rounded-xl font-medium hover:opacity-80 transition">${b.label}</button>`
+    :`<a href="${b.url}" target="_blank" class="px-6 py-3 rounded-xl font-medium ${b.style==='primary'?'bg-brand':'bg-white/5 hover:bg-white/10'} transition"${b.color?' style="background:'+b.color+'"':''}>${b.label}</a>`
+  ).join('')}catch(e){}
+  if(c.widgets) try{const ws=JSON.parse(c.widgets);
+    document.querySelectorAll('elevenlabs-convai').forEach(e=>e.remove());
+    ws.filter(w=>w.type==='elevenlabs'&&w.enabled).forEach(w=>{const el=document.createElement('elevenlabs-convai');el.setAttribute('agent-id',w.agent_id);document.body.appendChild(el)})
+  }catch(e){}
+}
+
+function applyCMSUpdate(d) {
+  if(!d.key||d.value===undefined) return;
+  const k=d.key, v=d.value;
+  if(k==='hero_title'){const el=document.getElementById('hero-title');if(el)el.childNodes[0].textContent=v+'\n'}
+  if(k==='hero_highlight'){const sp=document.querySelector('#hero-title .text-brand');if(sp)sp.textContent=v}
+  if(k==='hero_description'){const el=document.getElementById('hero-desc');if(el)el.textContent=v}
+  if(k==='footer_text'){const el=document.getElementById('footer-text');if(el)el.textContent=v}
+  if(k==='theme_brand')document.documentElement.style.setProperty('--brand',v);
+  if(k==='theme_accent')document.documentElement.style.setProperty('--accent',v);
+  if(k==='theme_dark')document.documentElement.style.setProperty('--dark',v);
+}
+
+async function loadCMS(){const c=await f('/api/site/content');if(c)applyCMS(c)}
+async function loadStats(){const d=await f('/api/site/public-stats');if(!d)return;
+  document.getElementById('stat-msgs').textContent=d.messages_today||0;
+  document.getElementById('stat-tools').textContent=d.tools_count||0;
+  document.getElementById('stat-services').textContent=d.services_count||0;
+  document.getElementById('stat-users').textContent=d.users_count||0}
+
+// ── Auth ──
+function requireAuth(){if(authToken){showDashboard();return}
+  document.getElementById('landing').classList.add('hidden');document.getElementById('dashboard').classList.add('hidden');
+  document.getElementById('login').classList.remove('hidden');document.getElementById('login-pass').focus()}
+
+async function doLogin(e){e.preventDefault();
+  const r=await f('/api/site/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({password:document.getElementById('login-pass').value,totp_code:document.getElementById('login-totp').value})});
+  if(r?.token){authToken=r.token;localStorage.setItem('finano_token',authToken);
+    document.getElementById('login').classList.add('hidden');showDashboard()}
+  else{const el=document.getElementById('login-error');el.textContent=r?.error||'Błąd';el.classList.remove('hidden')}}
+
+function doLogout(){authToken=null;localStorage.removeItem('finano_token');if(ws)ws.close();
+  document.getElementById('dashboard').classList.add('hidden');document.getElementById('login').classList.add('hidden');
+  document.getElementById('landing').classList.remove('hidden')}
+
+// ── Dashboard ──
+function showDashboard(){document.getElementById('landing').classList.add('hidden');document.getElementById('login').classList.add('hidden');
+  document.getElementById('dashboard').classList.remove('hidden');refreshDashboard();connectWS()}
+function showLanding(){document.getElementById('dashboard').classList.add('hidden');document.getElementById('landing').classList.remove('hidden');if(ws)ws.close()}
+
+async function refreshDashboard(){
+  const d=await f('/api/site/dashboard-stats',{headers:h()});if(!d||d.error)return;
+  document.getElementById('d-status').textContent=d.health?.rc_connected?'Online':'Offline';
+  document.getElementById('d-status').className=`text-lg font-bold mt-1 ${d.health?.rc_connected?'text-green-400':'text-red-400'}`;
+  document.getElementById('d-today').textContent=d.today?.messages||0;
+  document.getElementById('d-errors').textContent=d.today?.errors||0;
+  document.getElementById('d-cost').textContent=(d.today?.cost_usd||0).toFixed(4);
+  const svc=await f('/api/site/dashboard-services',{headers:h()});
+  if(svc?.services)document.getElementById('d-services').innerHTML=svc.services.map(s=>`
+    <div class="flex items-center justify-between p-2 rounded-lg bg-white/5">
+      <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full ${s.enabled&&s.healthy?'bg-green-400':'bg-red-400'}"></span><span>${s.display_name||s.name}</span></div>
+      <span class="text-gray-400">${s.tools_count} tools</span></div>`).join('');
+  refreshActivity()}
+
+async function refreshActivity(){
+  const d=await f('/api/site/dashboard-activity?limit=20',{headers:h()});if(!d?.activity)return;
+  document.getElementById('d-activity').innerHTML=d.activity.map(a=>`
+    <div class="p-2 rounded-lg bg-white/5 fade-in">
+      <div class="flex items-center justify-between"><span class="font-medium text-brand">@${a.user}</span>
+        <span class="text-xs text-gray-500">${a.ts?new Date(a.ts).toLocaleTimeString('pl'):''}</span></div>
+      <div class="text-gray-300 mt-1">${a.question||'-'}</div>
+      <div class="flex gap-3 mt-1 text-xs text-gray-500">
+        ${a.response_ms?`<span>${a.response_ms}ms</span>`:''}${a.tokens?`<span>${a.tokens} tok</span>`:''}
+        ${a.tools_selected?`<span>${a.tools_selected} tools</span>`:''}${a.error?`<span class="text-red-400">${a.error.substring(0,40)}</span>`:''}</div></div>
+  `).join('')||'<div class="text-gray-500">Brak aktywności</div>'}
+
+function connectWS(){if(ws&&ws.readyState<=1)return;
+  ws=new WebSocket(WS_URL+'?token='+authToken);
+  ws.onopen=()=>{document.getElementById('ws-status').className='w-2 h-2 rounded-full bg-green-400';document.getElementById('ws-label').textContent='Live'};
+  ws.onclose=()=>{document.getElementById('ws-status').className='w-2 h-2 rounded-full bg-gray-500';document.getElementById('ws-label').textContent='Ponowne łączenie...';setTimeout(connectWS,3000)};
+  ws.onmessage=(e)=>{try{const msg=JSON.parse(e.data);if(msg.type==='ping')return;
+    if(msg.type==='cms_update'){applyCMSUpdate(msg.data);return}
+    const feed=document.getElementById('d-live'),el=document.createElement('div');
+    el.className='p-2 rounded-lg bg-brand/10 fade-in';
+    el.innerHTML=`<span class="text-xs text-gray-400">${new Date(msg.ts*1000).toLocaleTimeString('pl')}</span><span class="text-brand ml-2">${msg.type}</span><div class="text-xs text-gray-300 mt-1">${JSON.stringify(msg.data).substring(0,120)}</div>`;
+    feed.prepend(el);if(feed.children.length>50)feed.lastChild.remove();
+    if(['message','tool_call','error'].includes(msg.type))refreshDashboard()}catch(e){}}}
+
+// Init
+loadCMS(); loadStats(); setInterval(loadStats, 30000);
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+</script>
+<script src="https://unpkg.com/@elevenlabs/convai-widget-embed" async type="text/javascript"></script>
+</body>
+</html>
