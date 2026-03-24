@@ -105,7 +105,7 @@ let currentPage=getPageId();
 let authToken=localStorage.getItem('finano_token'), ws=null, publicWS=null;
 
 const SECTION_ORDER=['announcement','hero','stats','features','services_status','hero_buttons','widgets','footer_text'];
-const SYSTEM_KEYS=new Set(['theme_brand','theme_accent','theme_dark','theme_card','meta_description','_section_order']);
+const SYSTEM_KEYS=new Set(['theme_brand','theme_accent','theme_dark','theme_card','meta_description','_section_order','_config','_menu']);
 const HERO_KEYS=new Set(['hero_title','hero_highlight','hero_description']);
 
 function h(){return authToken?{Authorization:'Bearer '+authToken}:{}}
@@ -280,6 +280,17 @@ function renderHero(c){
 
 // ── Build page from content ──
 function buildPage(c) {
+  // Apply _config overrides
+  if(c._config) {
+    try {
+      const cfg = typeof c._config === 'string' ? JSON.parse(c._config) : c._config;
+      if(cfg.theme_brand) document.documentElement.style.setProperty('--brand', cfg.theme_brand);
+      if(cfg.theme_accent) document.documentElement.style.setProperty('--accent', cfg.theme_accent);
+      if(cfg.theme_dark) document.documentElement.style.setProperty('--dark', cfg.theme_dark);
+      if(cfg.title) document.title = cfg.title;
+    } catch(e) {}
+  }
+
   // Apply theme
   if(c.theme_brand) document.documentElement.style.setProperty('--brand',c.theme_brand);
   if(c.theme_accent) document.documentElement.style.setProperty('--accent',c.theme_accent);
@@ -303,10 +314,14 @@ function buildPage(c) {
   let menuHtml = '';
   if (c._menu) {
     try {
-      const menu = JSON.parse(c._menu);
-      menuHtml = '<div class="flex gap-2 flex-wrap justify-center w-full mb-4">'+menu.map(m=>
-        '<button onclick="switchView(\''+m.view+'\',this)" class="px-4 py-2 rounded-lg text-sm bg-white/5 hover:bg-white/10 transition">'+(m.icon||'')+' '+m.label+'</button>'
-      ).join('')+'</div>';
+      const menu = typeof c._menu === 'string' ? JSON.parse(c._menu) : c._menu;
+      if (Array.isArray(menu) && menu.length) {
+        menuHtml = '<nav class="flex gap-2 flex-wrap justify-center w-full mb-6 py-3 border-b border-white/5">'+menu.map(m=>
+          '<button onclick="switchView(\''+m.view+'\',this)" class="px-4 py-2 rounded-xl text-sm transition '+
+          (window._currentView===m.view?'text-white':'text-gray-400 hover:text-white bg-white/5 hover:bg-white/10')+
+          '" style="'+(window._currentView===m.view?'background:var(--brand)':'')+'">'+(m.icon?m.icon+' ':'')+m.label+'</button>'
+        ).join('')+'</nav>';
+      }
     } catch(e) {}
   }
 
