@@ -130,6 +130,7 @@ def verify_session(request: Request) -> bool:
 _ws_clients: set[WebSocket] = set()
 
 async def broadcast(event_type: str, data: dict[str, Any]):
+    global _ws_clients
     if not _ws_clients:
         return
     msg = json.dumps({"type": event_type, "data": data, "ts": time.time()})
