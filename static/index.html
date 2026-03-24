@@ -198,6 +198,30 @@ async function refreshActivity(){
         ${a.tools_selected?`<span>${a.tools_selected} tools</span>`:''}${a.error?`<span class="text-red-400">${a.error.substring(0,40)}</span>`:''}</div></div>
   `).join('')||'<div class="text-gray-500">Brak aktywności</div>'}
 
+function handleLiveEvent(msg) {
+  const t = msg.type, d = msg.data || {};
+  // Update today counter
+  const todayEl = document.getElementById('d-today');
+  if (todayEl && t === 'message') todayEl.textContent = parseInt(todayEl.textContent || 0) + 1;
+  const errEl = document.getElementById('d-errors');
+  if (errEl && t === 'error') errEl.textContent = parseInt(errEl.textContent || 0) + 1;
+  // Add to activity feed
+  const act = document.getElementById('d-activity');
+  if (act) {
+    const el = document.createElement('div');
+    el.className = 'p-2 rounded-lg bg-white/5 fade-in';
+    const ts = new Date().toLocaleTimeString('pl');
+    el.innerHTML = `<div class="flex items-center justify-between"><span class="font-medium text-brand">@${d.user||'?'}</span><span class="text-xs text-gray-500">${ts}</span></div>`
+      + `<div class="text-gray-300 mt-1">${d.question||d.error||'-'}</div>`
+      + `<div class="flex gap-3 mt-1 text-xs text-gray-500">${d.response_ms?d.response_ms+'ms ':''}${d.tokens?d.tokens+' tok ':''}${d.tools?d.tools+' tools':''}</div>`;
+    act.prepend(el);
+    if (act.children.length > 30) act.lastChild.remove();
+  }
+  // Also update landing stats
+  const statMsgs = document.getElementById('stat-msgs');
+  if (statMsgs && t === 'message') statMsgs.textContent = parseInt(statMsgs.textContent || 0) + 1;
+}
+
 function connectWS(){if(ws&&ws.readyState<=1)return;
   ws=new WebSocket(WS_URL+'?token='+authToken);
   ws.onopen=()=>{document.getElementById('ws-status').className='w-2 h-2 rounded-full bg-green-400';document.getElementById('ws-label').textContent='Live'};
@@ -208,7 +232,7 @@ function connectWS(){if(ws&&ws.readyState<=1)return;
     el.className='p-2 rounded-lg bg-brand/10 fade-in';
     el.innerHTML=`<span class="text-xs text-gray-400">${new Date(msg.ts*1000).toLocaleTimeString('pl')}</span><span class="text-brand ml-2">${msg.type}</span><div class="text-xs text-gray-300 mt-1">${JSON.stringify(msg.data).substring(0,120)}</div>`;
     feed.prepend(el);if(feed.children.length>50)feed.lastChild.remove();
-    if(['message','tool_call','error'].includes(msg.type))refreshDashboard()}catch(e){}}}
+    if(['message','tool_call','error'].includes(msg.type))handleLiveEvent(msg)}catch(e){}}}
 
 // Init
 loadCMS(); loadStats(); setInterval(loadStats, 30000);
