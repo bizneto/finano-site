@@ -197,6 +197,35 @@ const blockRenderers = {
     ).join('')+'</div>';
   },
 
+  form(k,d) {
+    const fid = 'form_'+k.replace(/\W/g,'_');
+    const fields = (d.fields||[]).map(f => {
+      const id = fid+'_'+f.id;
+      let input = '';
+      if (f.type==='textarea')
+        input = '<textarea id="'+id+'" name="'+f.id+'" rows="'+(f.rows||3)+'" placeholder="'+(f.placeholder||'')+'" class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-brand resize-y">'+(f.default||'')+'</textarea>';
+      else if (f.type==='select')
+        input = '<select id="'+id+'" name="'+f.id+'" class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-brand">'
+          +(f.options||[]).map(o => '<option value="'+(o.value||o)+'" '+(o.value===f.default||o===f.default?'selected':'')+' style="background:#1e293b">'+(o.label||o)+'</option>').join('')+'</select>';
+      else if (f.type==='checkbox')
+        input = '<label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="'+id+'" name="'+f.id+'" '+(f.default?'checked':'')+' class="w-4 h-4 rounded accent-brand"><span class="text-sm text-gray-300">'+(f.check_label||f.label)+'</span></label>';
+      else
+        input = '<input type="'+(f.type||'text')+'" id="'+id+'" name="'+f.id+'" value="'+(f.default||'')+'" placeholder="'+(f.placeholder||'')+'" class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-brand" '+(f.required?'required':'')+'/>';
+      return '<div class="space-y-1">'
+        +(f.type!=='checkbox'?'<label for="'+id+'" class="text-sm text-gray-400">'+f.label+(f.required?' <span class="text-red-400">*</span>':'')+'</label>':'')
+        +input
+        +(f.hint?'<div class="text-xs text-gray-500">'+f.hint+'</div>':'')
+        +'</div>';
+    }).join('');
+
+    return '<div class="glass rounded-xl p-5 w-full fade-in" id="'+fid+'">'
+      +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-4">'+d.title+'</h3>':'')
+      +'<form onsubmit="submitForm(event,\''+fid+'\',\''+d.action+'\',\''+d.method+'\','+JSON.stringify(d.headers||{}).replace(/'/g,"\\'")+')"><div class="space-y-4">'+fields+'</div>'
+      +'<div class="flex items-center gap-3 mt-5">'
+      +'<button type="submit" class="px-5 py-2 rounded-lg font-medium text-sm btn-brand transition">'+d.submit_label+'</button>'
+      +'<span id="'+fid+'_status" class="text-sm hidden"></span>'
+      +'</div></form></div>';
+  },
   html(k,d) {
     return '<div class="glass rounded-xl p-4 w-full fade-in">'
       +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3">'+d.title+'</h3>':'')
@@ -205,6 +234,39 @@ const blockRenderers = {
   status(k,d) { return renderBadges(k, d.items||d); },
   alert(k,d) { return renderAlert(k, d); },
 };
+
+async function submitForm(e, formId, action, method, extraHeaders) {
+  e.preventDefault();
+  const form = document.querySelector('#'+formId+' form');
+  const status = document.getElementById(formId+'_status');
+  const btn = form.querySelector('button[type=submit]');
+  const data = {};
+  form.querySelectorAll('input,select,textarea').forEach(el => {
+    if (el.type==='checkbox') data[el.name] = el.checked;
+    else if (el.value) data[el.name] = el.type==='number'?Number(el.value):el.value;
+  });
+  btn.disabled = true; btn.textContent = 'Wysylanie...';
+  status.classList.add('hidden');
+  try {
+    const headers = {'Content-Type':'application/json', ...(typeof extraHeaders==='string'?JSON.parse(extraHeaders):extraHeaders||{})};
+    const r = await fetch(action, {method: method||'POST', headers, body: JSON.stringify(data)});
+    const d = await r.json();
+    if (d.success || r.ok) {
+      status.textContent = d.message || 'Zapisano!';
+      status.className = 'text-sm text-green-400';
+      form.reset();
+    } else {
+      status.textContent = d.error || d.detail || 'Blad';
+      status.className = 'text-sm text-red-400';
+    }
+  } catch(err) {
+    status.textContent = 'Blad polaczenia';
+    status.className = 'text-sm text-red-400';
+  }
+  status.classList.remove('hidden');
+  btn.disabled = false; btn.textContent = form.closest('.glass').querySelector('button[type=submit]')?.dataset?.label || 'Zapisz';
+  setTimeout(()=>status.classList.add('hidden'), 5000);
+}
 
 function showTab(containerId, idx) {
   const c=document.getElementById(containerId);

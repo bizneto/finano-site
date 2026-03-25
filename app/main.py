@@ -485,6 +485,25 @@ async def vault_exists(request: Request, key: str):
 
 # ── Dashboard Builder API ──
 
+@app.post("/api/site/dash/form")
+async def api_dash_form(request: Request):
+    b = await request.json()
+    page_id = b.get("page_id", "main")
+    key = b.get("key", "form")
+    block = {
+        "type": "form",
+        "title": b.get("title"),
+        "action": b.get("action", ""),
+        "method": b.get("method", "POST"),
+        "fields": b.get("fields", []),
+        "submit_label": b.get("submit_label", "Zapisz"),
+        "success_message": b.get("success_message", "Zapisano!"),
+        "headers": b.get("headers", {}),
+    }
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
 @app.post("/api/site/dash/html")
 async def api_dash_html(request: Request):
     b = await request.json()
