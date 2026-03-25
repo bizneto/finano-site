@@ -197,6 +197,11 @@ const blockRenderers = {
     ).join('')+'</div>';
   },
 
+  html(k,d) {
+    return '<div class="glass rounded-xl p-4 w-full fade-in">'
+      +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3">'+d.title+'</h3>':'')
+      +'<div class="html-block">'+d.html+'</div></div>';
+  },
   status(k,d) { return renderBadges(k, d.items||d); },
   alert(k,d) { return renderAlert(k, d); },
 };

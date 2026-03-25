@@ -12,6 +12,7 @@ from typing import Any
 import aiosqlite
 import httpx
 import pyotp
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
@@ -26,6 +27,7 @@ class Settings(BaseSettings):
     dashboard_password: str = ""
     dashboard_totp_secret: str = ""
     session_hours: int = 24
+    vault_token: str = ""
     db_path: str = "/data/site.db"
     host: str = "0.0.0.0"
     port: int = 8200
@@ -69,6 +71,14 @@ CREATE TABLE IF NOT EXISTS dashboard_history (
     new_value TEXT,
     changed_by TEXT DEFAULT '',
     changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS vault (
+    key TEXT PRIMARY KEY,
+    value_encrypted TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_sc_page ON site_content(page_id);
@@ -143,6 +153,41 @@ async def db_list_content(page_id: str = "main") -> list[dict[str, Any]]:
         cursor = await db.execute("SELECT key, value, page_id, updated_at FROM site_content WHERE page_id = ? ORDER BY key", (page_id,))
         rows = await cursor.fetchall()
     return [dict(r) for r in rows]
+
+# ── Vault encryption ──
+
+_vault_fernet = None
+
+def _init_vault_fernet():
+    global _vault_fernet
+    if settings.vault_token and not _vault_fernet:
+        try:
+            # Use vault_token as Fernet key if it's valid, otherwise derive one
+            _vault_fernet = Fernet(settings.vault_token.encode())
+        except Exception:
+            import hashlib, base64
+            key = base64.urlsafe_b64encode(hashlib.sha256(settings.vault_token.encode()).digest())
+            _vault_fernet = Fernet(key)
+
+def _vault_encrypt(value: str) -> str:
+    _init_vault_fernet()
+    if _vault_fernet:
+        return _vault_fernet.encrypt(value.encode()).decode()
+    return value
+
+def _vault_decrypt(encrypted: str) -> str:
+    _init_vault_fernet()
+    if _vault_fernet:
+        try:
+            return _vault_fernet.decrypt(encrypted.encode()).decode()
+        except (InvalidToken, Exception):
+            return encrypted
+    return encrypted
+
+def _verify_vault_token(request: Request):
+    token = request.headers.get("x-finano-token", "")
+    if not settings.vault_token or token != settings.vault_token:
+        raise HTTPException(status_code=401, detail="Invalid vault token")
 
 # ── Sessions ──
 
@@ -397,7 +442,59 @@ async def dashboard_history(dash_id: str, limit: int = 50):
         rows = await cursor.fetchall()
     return {"history": [dict(r) for r in rows]}
 
+# ── Vault API ──
+
+@app.post("/api/vault/set")
+async def vault_set(request: Request):
+    _verify_vault_token(request)
+    b = await request.json()
+    key = b.get("key", "")
+    value = b.get("value", "")
+    desc = b.get("description", "")
+    if not key or not value:
+        raise HTTPException(400, "key and value required")
+    encrypted = _vault_encrypt(value)
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "INSERT INTO vault (key, value_encrypted, description) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value_encrypted=excluded.value_encrypted, "
+            "description=excluded.description, updated_at=CURRENT_TIMESTAMP",
+            (key, encrypted, desc))
+        await db.commit()
+    return {"success": True, "key": key}
+
+@app.get("/api/vault/list")
+async def vault_list(request: Request):
+    _verify_vault_token(request)
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT key, description, updated_at FROM vault ORDER BY key")
+        rows = await cursor.fetchall()
+    return {"variables": [dict(r) for r in rows], "total": len(rows)}
+
+@app.get("/api/vault/exists/{key}")
+async def vault_exists(request: Request, key: str):
+    _verify_vault_token(request)
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT key, updated_at FROM vault WHERE key = ?", (key,))
+        row = await cursor.fetchone()
+    if row:
+        return {"key": key, "exists": True, "updated_at": row["updated_at"]}
+    return {"key": key, "exists": False}
+
 # ── Dashboard Builder API ──
+
+@app.post("/api/site/dash/html")
+async def api_dash_html(request: Request):
+    b = await request.json()
+    page_id = b.get("page_id", "main")
+    key = b.get("key", "html_block")
+    block = {"type": "html", "html": b.get("html", ""), "title": b.get("title")}
+    await db_set_content(key, json.dumps(block), page_id)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+    return {"success": True, "key": key, "page_id": page_id}
+
 
 @app.post("/api/site/dash/kpi")
 async def api_dash_kpi(request: Request):
