@@ -220,7 +220,7 @@ const blockRenderers = {
 
     return '<div class="glass rounded-xl p-5 w-full fade-in" id="'+fid+'">'
       +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-4">'+d.title+'</h3>':'')
-      +'<form onsubmit="submitForm(event,\''+fid+'\',\''+d.action+'\',\''+d.method+'\','+JSON.stringify(d.headers||{}).replace(/'/g,"\\'")+')"><div class="space-y-4">'+fields+'</div>'
+      +'<form onsubmit="submitForm(event,this)" data-fid="'+fid+'" data-action="'+d.action+'" data-method="'+(d.method||'POST')+'" data-headers="'+btoa(JSON.stringify(d.headers||{}))+'"><div class="space-y-4">'+fields+'</div>'
       +'<div class="flex items-center gap-3 mt-5">'
       +'<button type="submit" class="px-5 py-2 rounded-lg font-medium text-sm btn-brand transition">'+d.submit_label+'</button>'
       +'<span id="'+fid+'_status" class="text-sm hidden"></span>'
@@ -235,37 +235,38 @@ const blockRenderers = {
   alert(k,d) { return renderAlert(k, d); },
 };
 
-async function submitForm(e, formId, action, method, extraHeaders) {
+async function submitForm(e, formEl) {
   e.preventDefault();
-  const form = document.querySelector('#'+formId+' form');
-  const status = document.getElementById(formId+'_status');
-  const btn = form.querySelector('button[type=submit]');
+  const fid = formEl.dataset.fid;
+  const action = formEl.dataset.action;
+  const method = formEl.dataset.method || 'POST';
+  let extraHeaders = {};
+  try { extraHeaders = JSON.parse(atob(formEl.dataset.headers || 'e30=')); } catch(e) {}
+  const status = document.getElementById(fid+'_status');
+  const btn = formEl.querySelector('button[type=submit]');
+  const origLabel = btn.textContent;
   const data = {};
-  form.querySelectorAll('input,select,textarea').forEach(el => {
+  formEl.querySelectorAll('input,select,textarea').forEach(el => {
     if (el.type==='checkbox') data[el.name] = el.checked;
     else if (el.value) data[el.name] = el.type==='number'?Number(el.value):el.value;
   });
-  btn.disabled = true; btn.textContent = 'Wysylanie...';
-  status.classList.add('hidden');
+  btn.disabled = true; btn.textContent = 'Wysyłanie...';
+  if (status) status.classList.add('hidden');
   try {
-    const headers = {'Content-Type':'application/json', ...(typeof extraHeaders==='string'?JSON.parse(extraHeaders):extraHeaders||{})};
-    const r = await fetch(action, {method: method||'POST', headers, body: JSON.stringify(data)});
+    const headers = {'Content-Type':'application/json', ...extraHeaders};
+    const r = await fetch(action, {method, headers, body: JSON.stringify(data)});
     const d = await r.json();
     if (d.success || r.ok) {
-      status.textContent = d.message || 'Zapisano!';
-      status.className = 'text-sm text-green-400';
-      form.reset();
+      if (status) { status.textContent = d.message || 'Zapisano!'; status.className = 'text-sm text-green-400'; status.classList.remove('hidden'); }
+      formEl.reset();
     } else {
-      status.textContent = d.error || d.detail || 'Blad';
-      status.className = 'text-sm text-red-400';
+      if (status) { status.textContent = d.error || d.detail || 'Błąd'; status.className = 'text-sm text-red-400'; status.classList.remove('hidden'); }
     }
   } catch(err) {
-    status.textContent = 'Blad polaczenia';
-    status.className = 'text-sm text-red-400';
+    if (status) { status.textContent = 'Błąd połączenia'; status.className = 'text-sm text-red-400'; status.classList.remove('hidden'); }
   }
-  status.classList.remove('hidden');
-  btn.disabled = false; btn.textContent = form.closest('.glass').querySelector('button[type=submit]')?.dataset?.label || 'Zapisz';
-  setTimeout(()=>status.classList.add('hidden'), 5000);
+  btn.disabled = false; btn.textContent = origLabel;
+  setTimeout(()=>{ if(status) status.classList.add('hidden'); }, 5000);
 }
 
 function showTab(containerId, idx) {
