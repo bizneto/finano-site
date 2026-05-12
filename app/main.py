@@ -31,9 +31,21 @@ class Settings(BaseSettings):
     db_path: str = "/data/site.db"
     host: str = "0.0.0.0"
     port: int = 8200
+    internal_api_token: str = ""
+    public_base_url: str = "https://dash.finano.ai"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()
+
+
+def require_internal_token(request: Request):
+    """Auth for write endpoints — requires X-Internal-Token header matching configured token."""
+    if not settings.internal_api_token:
+        return  # Auth disabled if not configured
+    token = request.headers.get("x-internal-token", "")
+    if token != settings.internal_api_token:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Internal-Token")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -344,7 +356,7 @@ async def cms_list():
     return {"items": await db_list_content(request.query_params.get("page_id", "main"))}
 
 @app.post("/api/site/cms/set")
-async def cms_set(request: Request):
+async def cms_set(request: Request, _auth=Depends(require_internal_token)):
     body = await request.json()
     key, value = body.get("key"), body.get("value")
     if not key or value is None:
@@ -355,7 +367,7 @@ async def cms_set(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/cms/delete")
-async def cms_delete(request: Request):
+async def cms_delete(request: Request, _auth=Depends(require_internal_token)):
     body = await request.json()
     ok = await db_delete_content(body.get("key", ""), body.get("page_id", "main"))
     return {"success": ok}
@@ -363,7 +375,7 @@ async def cms_delete(request: Request):
 # ── Dashboard CRUD ──
 
 @app.post("/api/site/dashboards/create")
-async def create_dashboard(request: Request):
+async def create_dashboard(request: Request, _auth=Depends(require_internal_token)):
     body = await request.json()
     dash_id = body.get("id") or secrets.token_urlsafe(8)
     title = body.get("title", "Untitled")
@@ -375,7 +387,7 @@ async def create_dashboard(request: Request):
     # Set initial content
     for k, v in body.get("content", {}).items():
         await db_set_content(k, v if isinstance(v, str) else json.dumps(v), page_id=dash_id)
-    return {"success": True, "id": dash_id, "url": f"https://finano.ai/d/{dash_id}"}
+    return {"success": True, "id": dash_id, "url": f"{settings.public_base_url}/d/{dash_id}"}
 
 @app.get("/api/site/dashboards")
 async def list_dashboards(archived: bool = False, limit: int = 20):
@@ -385,7 +397,12 @@ async def list_dashboards(archived: bool = False, limit: int = 20):
             "SELECT id, title, description, access_type, tags, pinned, archived, created_at, updated_at FROM dashboards WHERE archived = ? ORDER BY pinned DESC, updated_at DESC LIMIT ?",
             (int(archived), limit))
         rows = await cursor.fetchall()
-    return {"dashboards": [dict(r) for r in rows]}
+    items = []
+    for r in rows:
+        d = dict(r)
+        d["url"] = f"{settings.public_base_url}/d/{d['id']}"
+        items.append(d)
+    return {"dashboards": items, "base_url": settings.public_base_url}
 
 @app.get("/api/site/dashboards/{dash_id}")
 async def get_dashboard(dash_id: str):
@@ -402,7 +419,7 @@ async def get_dashboard(dash_id: str):
     return d
 
 @app.post("/api/site/dashboards/{dash_id}/update")
-async def update_dashboard(dash_id: str, request: Request):
+async def update_dashboard(dash_id: str, request: Request, _auth=Depends(require_internal_token)):
     body = await request.json()
     sets, params = [], []
     for k in ("title", "description", "access_type", "pinned", "archived"):
@@ -422,7 +439,7 @@ async def update_dashboard(dash_id: str, request: Request):
     return {"success": True}
 
 @app.delete("/api/site/dashboards/{dash_id}")
-async def delete_dashboard(dash_id: str):
+async def delete_dashboard(dash_id: str, _auth=Depends(require_internal_token)):
     if dash_id == "main":
         return {"error": "Cannot delete main page"}
     async with aiosqlite.connect(db_path) as db:
@@ -486,7 +503,7 @@ async def vault_exists(request: Request, key: str):
 # ── Dashboard Builder API ──
 
 @app.post("/api/site/dash/form")
-async def api_dash_form(request: Request):
+async def api_dash_form(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id = b.get("page_id", "main")
     key = b.get("key", "form")
@@ -505,7 +522,7 @@ async def api_dash_form(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/dash/html")
-async def api_dash_html(request: Request):
+async def api_dash_html(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id = b.get("page_id", "main")
     key = b.get("key", "html_block")
@@ -516,7 +533,7 @@ async def api_dash_html(request: Request):
 
 
 @app.post("/api/site/dash/kpi")
-async def api_dash_kpi(request: Request):
+async def api_dash_kpi(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id = b.get("page_id", "main")
     block = {"type": "kpi_row", "items": b.get("items", [])}
@@ -527,7 +544,7 @@ async def api_dash_kpi(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/dash/chart")
-async def api_dash_chart(request: Request):
+async def api_dash_chart(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id = b.get("page_id", "main")
     key = b.get("key") or ("chart_" + b.get("title", "chart").lower().replace(" ", "_")[:20])
@@ -539,7 +556,7 @@ async def api_dash_chart(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/dash/table")
-async def api_dash_table(request: Request):
+async def api_dash_table(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id = b.get("page_id", "main")
     key = b.get("key") or ("table_" + b.get("title", "table").lower().replace(" ", "_")[:20])
@@ -551,7 +568,7 @@ async def api_dash_table(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/dash/timeline")
-async def api_dash_timeline(request: Request):
+async def api_dash_timeline(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, key = b.get("page_id", "main"), b.get("key", "timeline")
     block = {"type": "timeline", "title": b.get("title", ""), "items": b.get("items", [])}
@@ -560,7 +577,7 @@ async def api_dash_timeline(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/dash/alert")
-async def api_dash_alert(request: Request):
+async def api_dash_alert(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, key = b.get("page_id", "main"), b.get("key", "alert")
     block = {"type": "alert", "alert_type": b.get("alert_type", "info"), "text": b.get("text", "")}
@@ -569,7 +586,7 @@ async def api_dash_alert(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/dash/progress")
-async def api_dash_progress(request: Request):
+async def api_dash_progress(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, key = b.get("page_id", "main"), b.get("key", "progress")
     block = {"type": "progress", "title": b.get("title", ""), "items": b.get("items", [])}
@@ -578,7 +595,7 @@ async def api_dash_progress(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/dash/status")
-async def api_dash_status(request: Request):
+async def api_dash_status(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, key = b.get("page_id", "main"), b.get("key", "status")
     block = {"type": "status", "title": b.get("title", ""), "items": b.get("items", [])}
@@ -587,7 +604,7 @@ async def api_dash_status(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/dash/markdown")
-async def api_dash_markdown(request: Request):
+async def api_dash_markdown(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, key = b.get("page_id", "main"), b.get("key", "text")
     block = {"type": "markdown", "content": b.get("content", "")}
@@ -597,7 +614,7 @@ async def api_dash_markdown(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/dash/code")
-async def api_dash_code(request: Request):
+async def api_dash_code(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, key = b.get("page_id", "main"), b.get("key", "code")
     block = {"type": "code", "code": b.get("code", ""), "language": b.get("language", "python")}
@@ -607,7 +624,7 @@ async def api_dash_code(request: Request):
     return {"success": True, "key": key, "page_id": page_id}
 
 @app.post("/api/site/dash/menu")
-async def api_dash_menu(request: Request):
+async def api_dash_menu(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id = b.get("page_id", "main")
     await db_set_content("_menu", json.dumps(b.get("items", [])), page_id)
@@ -615,7 +632,7 @@ async def api_dash_menu(request: Request):
     return {"success": True, "key": "_menu", "page_id": page_id}
 
 @app.post("/api/site/dash/config")
-async def api_dash_config(request: Request):
+async def api_dash_config(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id = b.get("page_id", "main")
     cfg = {k: v for k, v in b.items() if k in ("title", "theme_brand", "theme_accent", "theme_dark", "auto_refresh", "show_header", "show_footer") and v is not None}
@@ -624,7 +641,7 @@ async def api_dash_config(request: Request):
     return {"success": True, "key": "_config", "page_id": page_id}
 
 @app.post("/api/site/dash/build-report")
-async def api_dash_build_report(request: Request):
+async def api_dash_build_report(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, title = b.get("page_id", "report"), b.get("title", "Report")
     blocks = []
@@ -644,12 +661,12 @@ async def api_dash_build_report(request: Request):
     if b.get("timeline_items"):
         await db_set_content("timeline", json.dumps({"type":"timeline","title":"Zdarzenia","items":b["timeline_items"]}), page_id)
         blocks.append("timeline")
-    return {"success": True, "page_id": page_id, "url": f"https://finano.ai/d/{page_id}", "blocks": blocks}
+    return {"success": True, "page_id": page_id, "url": f"{settings.public_base_url}/d/{page_id}", "blocks": blocks}
 
 # ── Event webhook (bot pushes events here) ──
 
 @app.post("/api/site/event")
-async def receive_event(request: Request):
+async def receive_event(request: Request, _auth=Depends(require_internal_token)):
     body = await request.json()
     event_type = body.get("type", "unknown")
     data = body.get("data", {})

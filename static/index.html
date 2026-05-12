@@ -52,17 +52,25 @@ tailwind.config={theme:{extend:{colors:{
   </div>
 </div>
 
-<!-- Landing — dynamic sections -->
+<!-- Landing/Dashboard — dynamic sections -->
 <div id="landing" class="min-h-screen flex flex-col">
-  <nav class="flex items-center justify-between px-6 py-4">
-    <div class="flex items-center gap-2">
+  <nav id="top-nav" class="flex items-center justify-between px-6 py-4">
+    <div class="flex items-center gap-2 cursor-pointer" onclick="location.href='/'">
       <div class="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold" style="background:var(--brand)">F</div>
-      <span class="font-semibold text-lg">Finano AI</span>
+      <span class="font-semibold text-lg" id="nav-title">Finano AI</span>
     </div>
-    <button onclick="requireAuth()" class="text-sm px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition">Dashboard</button>
+    <div class="flex items-center gap-2">
+      <span id="nav-page" class="text-xs text-gray-500"></span>
+      <button onclick="requireAuth()" class="text-sm px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition">Admin</button>
+    </div>
   </nav>
-  <div id="sections" class="flex-1 flex flex-col items-center px-6 py-8 gap-8 max-w-4xl mx-auto w-full">
-    <!-- Dynamic sections rendered here -->
+  <div id="dashboard-layout" class="flex-1 flex w-full">
+    <!-- Sidebar (only in dashboard mode with menu) -->
+    <aside id="sidebar" class="hidden md:hidden w-60 border-r border-white/5 px-3 py-6 flex-shrink-0"></aside>
+    <!-- Main content -->
+    <main id="main-content" class="flex-1 px-4 md:px-6 py-6">
+      <div id="sections-wrap" class="mx-auto w-full"></div>
+    </main>
   </div>
 </div>
 
@@ -111,6 +119,55 @@ const HERO_KEYS=new Set(['hero_title','hero_highlight','hero_description']);
 function h(){return authToken?{Authorization:'Bearer '+authToken}:{}}
 async function f(p,o){try{const r=await fetch(API+p,o||{});if(r.status===401){doLogout();return null}return r.json()}catch{return null}}
 
+// ── Heroicons library (24/outline) ──
+const HEROICONS = {
+  'check-circle': 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+  'x-circle': 'M9.75 9.75 14.25 14.25M14.25 9.75 9.75 14.25M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+  'exclamation-triangle': 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z',
+  'information-circle': 'M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z',
+  'clock': 'M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+  'bolt': 'm3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z',
+  'chart-bar': 'M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z',
+  'arrow-trending-up': 'M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941',
+  'arrow-trending-down': 'M2.25 6 9 12.75l4.286-4.286a11.948 11.948 0 0 1 4.306 6.43l.776 2.898m0 0 3.182-5.511m-3.182 5.51-5.511-3.181',
+  'sparkles': 'M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z',
+  'fire': 'M15.362 5.214A8.252 8.252 0 0 1 12 21 8.25 8.25 0 0 1 6.038 7.047 8.287 8.287 0 0 0 9 9.601a8.983 8.983 0 0 1 3.361-6.867 8.21 8.21 0 0 0 3 2.48Z',
+  'check': 'm4.5 12.75 6 6 9-13.5',
+  'x-mark': 'M6 18 18 6M6 6l12 12',
+  'document-text': 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z',
+  'list-bullet': 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z',
+  'table-cells': 'M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M13.125 12h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125M20.625 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5M12 14.625v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 14.625c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125m0 1.5v-1.5m0 0c0-.621.504-1.125 1.125-1.125m0 0h7.5',
+  'server': 'M5.25 14.25h13.5m-13.5 0a3 3 0 0 1-3-3m3 3a3 3 0 1 0 0 6h13.5a3 3 0 1 0 0-6m-16.5-3a3 3 0 0 1 3-3h13.5a3 3 0 0 1 3 3m-19.5 0a4.5 4.5 0 0 1 .9-2.7L5.737 5.1a3.375 3.375 0 0 1 2.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 0 1 .9 2.7m0 0a3 3 0 0 1-3 3m0 3h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Zm-3 6h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Z',
+  'cog-6-tooth': 'M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a6.759 6.759 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
+  'rocket-launch': 'M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z',
+  'megaphone': 'M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 0 0 1.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 0 1 0 3.46',
+  'star': 'M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z',
+  'beaker': 'M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23-.693L5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5',
+  'plus-circle': 'M12 9v6m3-3H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+  'minus-circle': 'M15 12H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+  'arrow-path': 'M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99',
+  'pause-circle': 'M14.25 9v6m-4.5 0V9M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+  'play-circle': 'M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z',
+  'signal': 'M9.348 14.652a3.75 3.75 0 0 1 0-5.304m5.304 0a3.75 3.75 0 0 1 0 5.304m-7.425 2.121a6.75 6.75 0 0 1 0-9.546m9.546 0a6.75 6.75 0 0 1 0 9.546M5.106 18.894c-3.808-3.807-3.808-9.98 0-13.788m13.788 0c3.808 3.807 3.808 9.98 0 13.788M12 12h.008v.008H12V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z',
+  'code-bracket': 'M14.25 9.75 16.5 12l-2.25 2.25m-4.5 0L7.5 12l2.25-2.25M6 20.25h12A2.25 2.25 0 0 0 20.25 18V6A2.25 2.25 0 0 0 18 3.75H6A2.25 2.25 0 0 0 3.75 6v12A2.25 2.25 0 0 0 6 20.25Z',
+  'cube': 'm21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9',
+};
+function icon(name, cls){
+  const path = HEROICONS[name];
+  if(!path) return '';
+  cls = cls || 'w-5 h-5';
+  return '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" class="'+cls+' inline-block flex-shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="'+path+'"/></svg>';
+}
+function iconOrText(s, cls){
+  if(!s) return '';
+  if(typeof s === 'string' && HEROICONS[s]) return icon(s, cls);
+  return s; // emoji or plain text fallback
+}
+const STATUS_ICON = {active:'check-circle', ok:'check-circle', online:'check-circle', success:'check-circle',
+  standby:'clock', pending:'clock', warning:'exclamation-triangle',
+  offline:'x-circle', error:'x-circle', danger:'x-circle', failed:'x-circle',
+  info:'information-circle', primary:'bolt'};
+
 // ── Section renderers ──
 // ── Typed block renderers ──
 const blockRenderers = {
@@ -119,10 +176,13 @@ const blockRenderers = {
     return '<div class="grid grid-cols-2 md:grid-cols-'+Math.min(items.length,4)+' gap-4 w-full">'+items.map(i=>{
       const colors={primary:'var(--brand)',success:'#22c55e',danger:'#ef4444',warning:'#eab308',accent:'var(--accent)'};
       const c=colors[i.color]||'var(--accent)';
-      return '<div class="glass rounded-xl p-4 text-center fade-in">'
-        +(i.trend?'<div class="text-xs '+(i.trend>0?'text-green-400':'text-red-400')+' mb-1">'+(i.trend>0?'↑':'↓')+Math.abs(i.trend)+'%</div>':'')
+      const trendIcon = i.trend>0 ? icon('arrow-trending-up','w-3 h-3') : icon('arrow-trending-down','w-3 h-3');
+      const iconHtml = i.icon ? '<div class="mb-1" style="color:'+c+'">'+iconOrText(i.icon,'w-6 h-6')+'</div>' : '';
+      return '<div class="glass rounded-xl p-4 text-center fade-in flex flex-col items-center">'
+        +iconHtml
+        +(i.trend?'<div class="text-xs flex items-center gap-1 '+(i.trend>0?'text-green-400':'text-red-400')+' mb-1">'+trendIcon+Math.abs(i.trend)+'%</div>':'')
         +'<div class="text-2xl font-bold" style="color:'+c+'">'+(i.pulse?'<span class="pulse-dot">':'')+i.value+(i.pulse?'</span>':'')+'</div>'
-        +'<div class="text-xs text-gray-400 mt-1">'+(i.icon||'')+' '+i.label+'</div></div>';
+        +'<div class="text-xs text-gray-400 mt-1">'+i.label+'</div></div>';
     }).join('')+'</div>';
   },
 
@@ -140,42 +200,66 @@ const blockRenderers = {
 
   table(k,d) {
     const cols=d.columns||[], rows=d.rows||[];
+    // Support both: ['Col1','Col2'] AND [{key,label}, {key,label}]
+    const colHeaders = cols.map(c => typeof c === 'object' ? (c.label||c.key) : c);
+    const colKeys = cols.map(c => typeof c === 'object' ? c.key : null);
     return '<div class="glass rounded-xl p-4 w-full fade-in overflow-x-auto">'
-      +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3">'+d.title+'</h3>':'')
-      +'<table class="w-full text-sm"><thead><tr>'+cols.map(c=>'<th class="text-left p-2 text-gray-400 border-b border-white/5">'+c+'</th>').join('')+'</tr></thead>'
-      +'<tbody>'+rows.map(r=>'<tr class="hover:bg-white/5">'+
-        (Array.isArray(r)?r:Object.values(r)).map(v=>'<td class="p-2 text-gray-300">'+v+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
+      +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">'+icon('table-cells','w-4 h-4 text-gray-500')+d.title+'</h3>':'')
+      +'<table class="w-full text-sm"><thead><tr>'+colHeaders.map(h=>'<th class="text-left p-2 text-gray-400 border-b border-white/5 font-medium">'+h+'</th>').join('')+'</tr></thead>'
+      +'<tbody>'+rows.map(r=>{
+        let cells;
+        if (Array.isArray(r)) cells = r;
+        else if (colKeys.some(k=>k)) cells = colKeys.map(k => r[k] !== undefined ? r[k] : '');
+        else cells = Object.values(r);
+        return '<tr class="hover:bg-white/5 border-b border-white/5">'+cells.map(v=>'<td class="p-2 text-gray-300">'+(v==null?'':v)+'</td>').join('')+'</tr>';
+      }).join('')+'</tbody></table></div>';
   },
 
   timeline(k,d) {
     const items=d.items||[];
     const colors={primary:'var(--brand)',success:'#22c55e',danger:'#ef4444',warning:'#eab308'};
+    const colorIcons={primary:'bolt',success:'check-circle',danger:'x-circle',warning:'exclamation-triangle'};
     return '<div class="glass rounded-xl p-4 w-full fade-in">'
-      +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3">'+d.title+'</h3>':'')
+      +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">'+icon('clock','w-4 h-4 text-gray-500')+d.title+'</h3>':'')
       +'<div class="space-y-3">'+items.map(i=>{
         const c=colors[i.color]||'var(--accent)';
-        return '<div class="flex gap-3 items-start"><div class="w-8 h-8 rounded-full flex items-center justify-center text-xs flex-shrink-0" style="background:color-mix(in srgb,'+c+' 20%,transparent);color:'+c+'">'+(i.icon||'•')+'</div>'
-          +'<div><div class="text-sm font-medium">'+i.title+'</div><div class="text-xs text-gray-500">'+i.time+'</div>'+(i.description?'<div class="text-xs text-gray-400 mt-1">'+i.description+'</div>':'')+'</div></div>';
+        const iconName = i.icon && HEROICONS[i.icon] ? i.icon : (colorIcons[i.color] || 'clock');
+        const iconHtml = i.icon && !HEROICONS[i.icon] ? i.icon : icon(iconName,'w-4 h-4');
+        return '<div class="flex gap-3 items-start"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:color-mix(in srgb,'+c+' 20%,transparent);color:'+c+'">'+iconHtml+'</div>'
+          +'<div class="flex-1"><div class="text-sm font-medium">'+i.title+'</div><div class="text-xs text-gray-500">'+i.time+'</div>'+(i.description?'<div class="text-xs text-gray-400 mt-1">'+i.description+'</div>':'')+'</div></div>';
       }).join('')+'</div></div>';
   },
 
   progress(k,d) {
-    const pct=Math.min(100,Math.max(0,d.value||0));
+    // Wsparcie dla pojedynczego paska (d.value) ORAZ listy items (d.items)
     const colors={primary:'var(--brand)',success:'#22c55e',danger:'#ef4444',warning:'#eab308'};
-    const c=colors[d.color]||'var(--brand)';
-    return '<div class="glass rounded-xl p-4 w-full fade-in">'
-      +(d.title?'<div class="flex justify-between text-sm mb-2"><span class="text-gray-300">'+d.title+'</span><span style="color:'+c+'">'+pct+'%</span></div>':'')
-      +'<div class="h-2 rounded-full bg-white/5"><div class="h-full rounded-full transition-all" style="width:'+pct+'%;background:'+c+'"></div></div></div>';
+    const renderBar = (label, val, color) => {
+      const pct=Math.min(100,Math.max(0,val||0));
+      const c=colors[color]||'var(--brand)';
+      const done = pct>=100 ? icon('check-circle','w-4 h-4 text-green-400') : '';
+      return (label?'<div class="flex justify-between items-center text-sm mb-1"><span class="text-gray-300 flex items-center gap-2">'+done+label+'</span><span style="color:'+c+'">'+pct+'%</span></div>':'')
+        +'<div class="h-2 rounded-full bg-white/5 mb-3"><div class="h-full rounded-full transition-all" style="width:'+pct+'%;background:'+c+'"></div></div>';
+    };
+    if (Array.isArray(d.items)) {
+      return '<div class="glass rounded-xl p-4 w-full fade-in">'
+        +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">'+icon('chart-bar','w-4 h-4 text-gray-500')+d.title+'</h3>':'')
+        +d.items.map(i=>renderBar(i.label,i.value,i.color)).join('')
+        +'</div>';
+    }
+    return '<div class="glass rounded-xl p-4 w-full fade-in">'+renderBar(d.title,d.value,d.color)+'</div>';
   },
 
   markdown(k,d) {
-    return '<div class="glass rounded-xl p-4 w-full fade-in prose prose-invert prose-sm max-w-none">'+(d.content||'').replace(/\n/g,'<br>')+'</div>';
+    return '<div class="glass rounded-xl p-4 w-full fade-in">'
+      +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">'+icon('document-text','w-4 h-4 text-gray-500')+d.title+'</h3>':'')
+      +'<div class="prose prose-invert prose-sm max-w-none">'+(d.content||'').replace(/\n/g,'<br>')+'</div>'
+      +'</div>';
   },
 
   code(k,d) {
     return '<div class="glass rounded-xl p-4 w-full fade-in">'
-      +(d.title?'<div class="text-xs text-gray-400 mb-2">'+d.title+(d.language?' — '+d.language:'')+'</div>':'')
-      +'<pre class="text-xs text-gray-300 overflow-x-auto"><code>'+((d.content||d.code||'').replace(/</g,'&lt;'))+'</code></pre></div>';
+      +(d.title?'<div class="text-xs text-gray-400 mb-2 flex items-center gap-2">'+icon('code-bracket','w-4 h-4')+d.title+(d.language?' <span class="px-1.5 py-0.5 rounded bg-white/5 text-gray-500">'+d.language+'</span>':'')+'</div>':'')
+      +'<pre class="text-xs text-gray-300 overflow-x-auto bg-black/30 rounded-lg p-3"><code>'+((d.content||d.code||'').replace(/</g,'&lt;'))+'</code></pre></div>';
   },
 
   tabs(k,d) {
@@ -231,7 +315,14 @@ const blockRenderers = {
       +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3">'+d.title+'</h3>':'')
       +'<div class="html-block">'+d.html+'</div></div>';
   },
-  status(k,d) { return renderBadges(k, d.items||d); },
+  status(k,d) {
+    const items = d.items || d;
+    if (!Array.isArray(items)) return '';
+    return '<div class="glass rounded-xl p-4 w-full fade-in">'
+      +(d.title?'<h3 class="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">'+icon('signal','w-4 h-4 text-gray-500')+d.title+'</h3>':'')
+      +renderBadges(k, items)
+      +'</div>';
+  },
   alert(k,d) { return renderAlert(k, d); },
 };
 
@@ -302,7 +393,9 @@ function renderSection(key, val) {
 
 function renderAlert(k,d){
   const colors={info:'border-blue-500 bg-blue-500/10 text-blue-200',success:'border-green-500 bg-green-500/10 text-green-200',warning:'border-yellow-500 bg-yellow-500/10 text-yellow-200',danger:'border-red-500 bg-red-500/10 text-red-200'};
-  return `<div class="w-full rounded-xl p-4 border-l-4 ${colors[d.type]||colors.info} fade-in">${d.text}</div>`;
+  const alertType = d.alert_type || d.type || 'info';
+  const iconMap = {info:'information-circle', success:'check-circle', warning:'exclamation-triangle', danger:'x-circle'};
+  return `<div class="w-full rounded-xl p-4 border-l-4 ${colors[alertType]||colors.info} fade-in flex items-start gap-3">${icon(iconMap[alertType]||'information-circle','w-5 h-5 mt-0.5 flex-shrink-0')}<div class="flex-1">${d.text}</div></div>`;
 }
 
 function renderStats(k,items){
@@ -318,10 +411,14 @@ function renderCards(k,items){
 }
 
 function renderBadges(k,items){
-  const sc={active:'bg-green-500/20 text-green-300',ok:'bg-green-500/20 text-green-300',online:'bg-green-500/20 text-green-300',standby:'bg-yellow-500/20 text-yellow-300',offline:'bg-red-500/20 text-red-300',error:'bg-red-500/20 text-red-300'};
-  return `<div class="flex flex-wrap gap-2 w-full">${items.map(i=>
-    `<span class="px-3 py-1 rounded-full text-sm ${sc[i.status?.toLowerCase()]||'bg-gray-500/20 text-gray-300'} fade-in">${i.icon||''} ${i.name} <span class="opacity-60">${i.status}</span></span>`
-  ).join('')}</div>`;
+  const sc={active:'bg-green-500/20 text-green-300',ok:'bg-green-500/20 text-green-300',online:'bg-green-500/20 text-green-300',standby:'bg-yellow-500/20 text-yellow-300',pending:'bg-yellow-500/20 text-yellow-300',warning:'bg-yellow-500/20 text-yellow-300',offline:'bg-red-500/20 text-red-300',error:'bg-red-500/20 text-red-300',failed:'bg-red-500/20 text-red-300'};
+  return `<div class="flex flex-wrap gap-2 w-full">${items.map(i=>{
+    const stat = (i.status||'').toLowerCase();
+    const iconName = STATUS_ICON[stat] || 'information-circle';
+    const customIcon = i.icon ? iconOrText(i.icon,'w-4 h-4') : icon(iconName,'w-4 h-4');
+    const detail = i.detail ? ` <span class="opacity-60 text-xs">(${i.detail})</span>` : '';
+    return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm ${sc[stat]||'bg-gray-500/20 text-gray-300'} fade-in">${customIcon}${i.name}${detail}</span>`;
+  }).join('')}</div>`;
 }
 
 function renderButtons(items){
@@ -347,11 +444,31 @@ function renderHero(c){
 }
 
 // ── Build page from content ──
+// Default column span per block type (12-col grid)
+const COL_SPAN = {
+  alert: 12, kpi_row: 12, table: 12, tabs: 12, columns: 12, html: 12, hero: 12,
+  chart: 8, markdown: 6, code: 6, form: 6, status: 6, progress: 6, timeline: 4,
+};
+function blockColSpan(type, dataCols) {
+  if (dataCols && dataCols >= 1 && dataCols <= 12) return dataCols;
+  return COL_SPAN[type] || 6;
+}
+function wrapInGrid(html, span) {
+  if (!html) return '';
+  return '<div class="col-span-12 md:col-span-'+span+'">'+html+'</div>';
+}
+function isDashboardMode() {
+  return currentPage !== 'main';
+}
+
 function buildPage(c) {
+  const dashboard = isDashboardMode();
+
   // Apply _config overrides
+  let cfg = {};
   if(c._config) {
     try {
-      const cfg = typeof c._config === 'string' ? JSON.parse(c._config) : c._config;
+      cfg = typeof c._config === 'string' ? JSON.parse(c._config) : c._config;
       if(cfg.theme_brand) document.documentElement.style.setProperty('--brand', cfg.theme_brand);
       if(cfg.theme_accent) document.documentElement.style.setProperty('--accent', cfg.theme_accent);
       if(cfg.theme_dark) document.documentElement.style.setProperty('--dark', cfg.theme_dark);
@@ -365,10 +482,50 @@ function buildPage(c) {
   if(c.theme_dark) document.documentElement.style.setProperty('--dark',c.theme_dark);
   if(c.meta_description) document.querySelector('meta[name=description]').content=c.meta_description;
 
-  // Widgets (append to body, not sections)
+  // Update top-nav title
+  const navTitle = document.getElementById('nav-title');
+  const navPage = document.getElementById('nav-page');
+  if (navTitle) navTitle.textContent = dashboard ? (cfg.title || currentPage) : 'Finano AI';
+  if (navPage) navPage.textContent = dashboard ? '/'+currentPage : '';
+
+  // Widgets (append to body)
   document.querySelectorAll('elevenlabs-convai').forEach(e=>e.remove());
   if(c.widgets) try{const ws=JSON.parse(c.widgets);ws.filter(w=>w.type==='elevenlabs'&&w.enabled).forEach(w=>{
     const el=document.createElement('elevenlabs-convai');el.setAttribute('agent-id',w.agent_id);document.body.appendChild(el)})}catch{}
+
+  // Adjust container width: dashboard = full-width, landing = narrow centered
+  const wrap = document.getElementById('sections-wrap');
+  if (wrap) {
+    wrap.className = dashboard
+      ? 'mx-auto w-full max-w-[1600px]'
+      : 'flex flex-col items-center gap-8 max-w-4xl mx-auto w-full';
+  }
+
+  // Sidebar (only dashboard mode with _menu)
+  const sidebar = document.getElementById('sidebar');
+  let hasSidebar = false;
+  if (sidebar) {
+    sidebar.innerHTML = '';
+    sidebar.className = 'hidden md:hidden w-60 border-r border-white/5 px-3 py-6 flex-shrink-0';
+    if (dashboard && c._menu) {
+      try {
+        const menu = typeof c._menu === 'string' ? JSON.parse(c._menu) : c._menu;
+        if (Array.isArray(menu) && menu.length) {
+          hasSidebar = true;
+          sidebar.className = 'hidden md:flex flex-col w-60 border-r border-white/5 px-3 py-6 flex-shrink-0 sticky top-0 h-screen overflow-y-auto';
+          sidebar.innerHTML = '<div class="text-xs text-gray-500 uppercase tracking-wider px-3 mb-3">Menu</div>'
+            + menu.map(m=>{
+              const active = window._currentView===m.view;
+              const iconHtml = m.icon ? iconOrText(m.icon, 'w-4 h-4') : '';
+              return '<button onclick="switchView(\''+m.view+'\',this)" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition mb-1 '
+                +(active?'text-white':'text-gray-400 hover:text-white hover:bg-white/5')
+                +'" style="'+(active?'background:var(--brand)':'')+'">'
+                +iconHtml+'<span>'+m.label+'</span></button>';
+            }).join('');
+        }
+      } catch(e) {}
+    }
+  }
 
   // Get section order
   let order=[...SECTION_ORDER];
@@ -376,39 +533,67 @@ function buildPage(c) {
   const allKeys=Object.keys(c).filter(k=>!SYSTEM_KEYS.has(k)&&!HERO_KEYS.has(k));
   const extra=allKeys.filter(k=>!order.includes(k)&&k!=='widgets');
   const finalOrder=[...order,...extra];
-
-  // Build HTML
-  // Menu
-  let menuHtml = '';
-  if (c._menu) {
-    try {
-      const menu = typeof c._menu === 'string' ? JSON.parse(c._menu) : c._menu;
-      if (Array.isArray(menu) && menu.length) {
-        menuHtml = '<nav class="flex gap-2 flex-wrap justify-center w-full mb-6 py-3 border-b border-white/5">'+menu.map(m=>
-          '<button onclick="switchView(\''+m.view+'\',this)" class="px-4 py-2 rounded-xl text-sm transition '+
-          (window._currentView===m.view?'text-white':'text-gray-400 hover:text-white bg-white/5 hover:bg-white/10')+
-          '" style="'+(window._currentView===m.view?'background:var(--brand)':'')+'">'+(m.icon?m.icon+' ':'')+m.label+'</button>'
-        ).join('')+'</nav>';
-      }
-    } catch(e) {}
-  }
-
-  let html=renderHero(c)+menuHtml;
-  // Current view filter
   const currentView = window._currentView || null;
 
-  for(const key of finalOrder){
-    // View filtering: key with __ prefix belongs to a view
-    if (key.includes('__') && currentView) {
-      const viewName = key.split('__')[0];
-      if (viewName !== currentView) continue;
-    } else if (currentView && key.includes('__')) {
-      continue; // hide view-specific keys when no view selected
+  // ── Landing mode (page_id=main): keep narrow vertical layout
+  if (!dashboard) {
+    let menuHtml = '';
+    if (c._menu) {
+      try {
+        const menu = typeof c._menu === 'string' ? JSON.parse(c._menu) : c._menu;
+        if (Array.isArray(menu) && menu.length) {
+          menuHtml = '<nav class="flex gap-2 flex-wrap justify-center w-full mb-6 py-3 border-b border-white/5">'+menu.map(m=>
+            '<button onclick="switchView(\''+m.view+'\',this)" class="px-4 py-2 rounded-xl text-sm transition '+
+            (window._currentView===m.view?'text-white':'text-gray-400 hover:text-white bg-white/5 hover:bg-white/10')+
+            '" style="'+(window._currentView===m.view?'background:var(--brand)':'')+'">'+(m.icon?iconOrText(m.icon,'w-4 h-4 inline')+' ':'')+m.label+'</button>'
+          ).join('')+'</nav>';
+        }
+      } catch(e) {}
     }
-    if(!c[key]) continue;
-    html+=renderSection(key,c[key]);
+    let html = renderHero(c) + menuHtml;
+    for (const key of finalOrder) {
+      if (key.includes('__') && currentView) {
+        if (key.split('__')[0] !== currentView) continue;
+      } else if (currentView && key.includes('__')) continue;
+      if (!c[key]) continue;
+      html += renderSection(key, c[key]);
+    }
+    wrap.innerHTML = html;
+    return;
   }
-  document.getElementById('sections').innerHTML=html;
+
+  // ── Dashboard mode (page_id != main): grid layout
+  let header = '';
+  if (cfg.title || cfg.description) {
+    header = '<div class="mb-6">'
+      + (cfg.title ? '<h1 class="text-2xl md:text-3xl font-bold text-white">'+cfg.title+'</h1>' : '')
+      + (cfg.description ? '<p class="text-gray-400 mt-1">'+cfg.description+'</p>' : '')
+      + '</div>';
+  }
+
+  let gridItems = '';
+  for (const key of finalOrder) {
+    if (key.includes('__') && currentView) {
+      if (key.split('__')[0] !== currentView) continue;
+    } else if (currentView && key.includes('__')) continue;
+    if (!c[key]) continue;
+
+    // Determine block type & cols
+    let parsed = c[key];
+    let type = null, dataCols = null;
+    try {
+      if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+      if (parsed && typeof parsed === 'object') {
+        type = parsed.type || null;
+        dataCols = parsed.cols || null;
+      }
+    } catch {}
+    const span = blockColSpan(type, dataCols);
+    const inner = renderSection(key, c[key]);
+    if (inner) gridItems += wrapInGrid(inner, span);
+  }
+
+  wrap.innerHTML = header + '<div class="grid grid-cols-12 gap-4">' + gridItems + '</div>';
 }
 
 // ── CMS update via WebSocket (targeted) ──
