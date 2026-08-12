@@ -546,6 +546,20 @@ async def save_block(page_id: str, key: str, block: dict, body: dict, known_fiel
             hint = " (czy chodziło o page_id?)" if k == "id" else ""
             warnings.append(f"nieznane pole '{k}' — pominięte{hint}")
 
+    # 1a) HARD guard: a page-id alias was given but `page_id` was not — the block would
+    # silently land on 'main' (wrong page). Refuse the write and say exactly why.
+    id_aliases = {"id", "dash_id", "dashboard_id", "page"}
+    misused = [k for k in body if k in id_aliases]
+    if page_id == "main" and "page_id" not in body and misused:
+        return {
+            "success": False,
+            "page_id": None,
+            "error": f"pole '{misused[0]}' to nie jest adres strony — blok NIE został zapisany. "
+                     f"Użyj 'page_id' (zwracanego przez create), inaczej blok trafiłby na stronę 'main'.",
+            "hint_field": "page_id",
+            "warnings": warnings,
+        }
+
     # 2) Target page must exist, or the block silently lands on 'main'.
     if not await _page_exists(page_id):
         warnings.append(f"strona page_id='{page_id}' nie istnieje — utwórz ją najpierw (create), inaczej blok trafia w próżnię")
