@@ -387,7 +387,9 @@ async def create_dashboard(request: Request, _auth=Depends(require_internal_toke
     # Set initial content
     for k, v in body.get("content", {}).items():
         await db_set_content(k, v if isinstance(v, str) else json.dumps(v), page_id=dash_id)
-    return {"success": True, "id": dash_id, "url": f"{settings.public_base_url}/d/{dash_id}"}
+    # `page_id` mirrors `id`: block endpoints (dash_*) address the page by `page_id`,
+    # so return it under that exact name to remove the id/page_id mismatch footgun.
+    return {"success": True, "id": dash_id, "page_id": dash_id, "url": f"{settings.public_base_url}/d/{dash_id}"}
 
 @app.get("/api/site/dashboards")
 async def list_dashboards(archived: bool = False, limit: int = 20):
@@ -502,6 +504,81 @@ async def vault_exists(request: Request, key: str):
 
 # ── Dashboard Builder API ──
 
+# Agent-first helpers: every write validates its input, echoes the saved block
+# (read-after-write), reports a layout summary and any warnings — so the caller can
+# close the feedback loop from the response alone instead of re-reading the dashboard.
+
+async def _page_layout(page_id: str) -> list[dict[str, str]]:
+    """Blocks in render order (render sorts by key), as [{key, type}]. Meta keys (_*) skipped."""
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT key, value FROM site_content WHERE page_id = ? ORDER BY key", (page_id,))
+        rows = await cursor.fetchall()
+    layout = []
+    for r in rows:
+        if r["key"].startswith("_"):
+            continue
+        try:
+            t = json.loads(r["value"]).get("type", "raw")
+        except Exception:
+            t = "raw"
+        layout.append({"key": r["key"], "type": t})
+    return layout
+
+
+async def _page_exists(page_id: str) -> bool:
+    if page_id == "main":
+        return True
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute("SELECT 1 FROM dashboards WHERE id = ?", (page_id,))
+        return await cursor.fetchone() is not None
+
+
+async def save_block(page_id: str, key: str, block: dict, body: dict, known_fields: set,
+                     empty_checks: list | None = None, changed_by: str = "") -> dict:
+    """Validate, persist, and return an agent-first response for a single block write."""
+    warnings: list[str] = []
+
+    # 1) Unknown fields — surfaced, not silently swallowed.
+    reserved = {"page_id", "key"}
+    for k in body.keys():
+        if k not in known_fields and k not in reserved:
+            hint = " (czy chodziło o page_id?)" if k == "id" else ""
+            warnings.append(f"nieznane pole '{k}' — pominięte{hint}")
+
+    # 2) Target page must exist, or the block silently lands on 'main'.
+    if not await _page_exists(page_id):
+        warnings.append(f"strona page_id='{page_id}' nie istnieje — utwórz ją najpierw (create), inaczej blok trafia w próżnię")
+
+    # 3) Key collision — the write would overwrite an existing block.
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT value FROM site_content WHERE key = ? AND page_id = ?", (key, page_id))
+        old = await cursor.fetchone()
+    if old and not key.startswith("_"):
+        try:
+            old_type = json.loads(old["value"]).get("type", "?")
+        except Exception:
+            old_type = "?"
+        warnings.append(f"nadpisano istniejący blok o kluczu '{key}' (był typ '{old_type}') — użyj innego 'key', aby dołożyć kolejny")
+
+    # 4) Emptiness / suspicious-content checks (per block type).
+    warnings.extend(empty_checks or [])
+
+    # 5) Persist + broadcast.
+    await db_set_content(key, json.dumps(block), page_id, changed_by)
+    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
+
+    return {
+        "success": True,
+        "key": key,
+        "page_id": page_id,
+        "block": block,                      # read-after-write: exactly what was saved
+        "warnings": warnings,
+        "layout": await _page_layout(page_id),  # blocks in render order
+    }
+
+
 @app.post("/api/site/dash/form")
 async def api_dash_form(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
@@ -517,9 +594,9 @@ async def api_dash_form(request: Request, _auth=Depends(require_internal_token))
         "success_message": b.get("success_message", "Zapisano!"),
         "headers": b.get("headers", {}),
     }
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = [] if b.get("fields") else ["form zapisany, ale 'fields' jest puste — formularz nie ma pól"]
+    return await save_block(page_id, key, block, b,
+        {"title", "action", "method", "fields", "submit_label", "success_message", "headers"}, empties)
 
 @app.post("/api/site/dash/html")
 async def api_dash_html(request: Request, _auth=Depends(require_internal_token)):
@@ -527,9 +604,8 @@ async def api_dash_html(request: Request, _auth=Depends(require_internal_token))
     page_id = b.get("page_id", "main")
     key = b.get("key", "html_block")
     block = {"type": "html", "html": b.get("html", ""), "title": b.get("title")}
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = [] if b.get("html") else ["html zapisany, ale 'html' jest puste"]
+    return await save_block(page_id, key, block, b, {"html", "title"}, empties)
 
 
 @app.post("/api/site/dash/kpi")
@@ -539,9 +615,8 @@ async def api_dash_kpi(request: Request, _auth=Depends(require_internal_token)):
     block = {"type": "kpi_row", "items": b.get("items", [])}
     if b.get("title"): block["title"] = b["title"]
     key = b.get("key", "kpi")
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = [] if b.get("items") else ["kpi_row zapisany, ale 'items' jest puste — brak wskaźników do pokazania"]
+    return await save_block(page_id, key, block, b, {"items", "title"}, empties)
 
 @app.post("/api/site/dash/chart")
 async def api_dash_chart(request: Request, _auth=Depends(require_internal_token)):
@@ -551,9 +626,13 @@ async def api_dash_chart(request: Request, _auth=Depends(require_internal_token)
     block = {"type": "chart", "chart_type": b.get("chart_type", "bar"), "title": b.get("title", ""),
              "data": {"labels": b.get("labels", []), "datasets": b.get("datasets", [])}}
     if b.get("stacked"): block["stacked"] = True
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = []
+    if not b.get("datasets"):
+        empties.append("chart zapisany, ale 'datasets' jest puste — wykres wyrenderuje się pusty")
+    elif not b.get("labels"):
+        empties.append("chart ma 'datasets', ale 'labels' jest puste — oś X będzie bez etykiet")
+    return await save_block(page_id, key, block, b,
+        {"chart_type", "title", "labels", "datasets", "stacked"}, empties)
 
 @app.post("/api/site/dash/table")
 async def api_dash_table(request: Request, _auth=Depends(require_internal_token)):
@@ -563,45 +642,45 @@ async def api_dash_table(request: Request, _auth=Depends(require_internal_token)
     block = {"type": "table", "title": b.get("title", ""), "columns": b.get("columns", []),
              "rows": b.get("rows", []), "searchable": b.get("searchable", True),
              "pagination": {"per_page": b.get("page_size", 10), "total": len(b.get("rows", []))}}
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = []
+    if not b.get("columns"):
+        empties.append("table zapisany, ale 'columns' jest puste")
+    if not b.get("rows"):
+        empties.append("table zapisany, ale 'rows' jest puste — tabela bez danych")
+    return await save_block(page_id, key, block, b,
+        {"title", "columns", "rows", "searchable", "page_size"}, empties)
 
 @app.post("/api/site/dash/timeline")
 async def api_dash_timeline(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, key = b.get("page_id", "main"), b.get("key", "timeline")
     block = {"type": "timeline", "title": b.get("title", ""), "items": b.get("items", [])}
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = [] if b.get("items") else ["timeline zapisany, ale 'items' jest puste"]
+    return await save_block(page_id, key, block, b, {"title", "items"}, empties)
 
 @app.post("/api/site/dash/alert")
 async def api_dash_alert(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, key = b.get("page_id", "main"), b.get("key", "alert")
     block = {"type": "alert", "alert_type": b.get("alert_type", "info"), "text": b.get("text", "")}
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = [] if b.get("text") else ["alert zapisany, ale 'text' jest puste"]
+    return await save_block(page_id, key, block, b, {"alert_type", "text"}, empties)
 
 @app.post("/api/site/dash/progress")
 async def api_dash_progress(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, key = b.get("page_id", "main"), b.get("key", "progress")
     block = {"type": "progress", "title": b.get("title", ""), "items": b.get("items", [])}
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = [] if b.get("items") else ["progress zapisany, ale 'items' jest puste"]
+    return await save_block(page_id, key, block, b, {"title", "items"}, empties)
 
 @app.post("/api/site/dash/status")
 async def api_dash_status(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id, key = b.get("page_id", "main"), b.get("key", "status")
     block = {"type": "status", "title": b.get("title", ""), "items": b.get("items", [])}
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = [] if b.get("items") else ["status zapisany, ale 'items' jest puste"]
+    return await save_block(page_id, key, block, b, {"title", "items"}, empties)
 
 @app.post("/api/site/dash/markdown")
 async def api_dash_markdown(request: Request, _auth=Depends(require_internal_token)):
@@ -609,9 +688,8 @@ async def api_dash_markdown(request: Request, _auth=Depends(require_internal_tok
     page_id, key = b.get("page_id", "main"), b.get("key", "text")
     block = {"type": "markdown", "content": b.get("content", "")}
     if b.get("title"): block["title"] = b["title"]
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = [] if b.get("content") else ["markdown zapisany, ale 'content' jest puste"]
+    return await save_block(page_id, key, block, b, {"content", "title"}, empties)
 
 @app.post("/api/site/dash/code")
 async def api_dash_code(request: Request, _auth=Depends(require_internal_token)):
@@ -619,26 +697,25 @@ async def api_dash_code(request: Request, _auth=Depends(require_internal_token))
     page_id, key = b.get("page_id", "main"), b.get("key", "code")
     block = {"type": "code", "code": b.get("code", ""), "language": b.get("language", "python")}
     if b.get("title"): block["title"] = b["title"]
-    await db_set_content(key, json.dumps(block), page_id)
-    await broadcast("cms_update", {"key": key, "value": json.dumps(block), "page_id": page_id})
-    return {"success": True, "key": key, "page_id": page_id}
+    empties = [] if b.get("code") else ["code zapisany, ale 'code' jest puste"]
+    return await save_block(page_id, key, block, b, {"code", "language", "title"}, empties)
 
 @app.post("/api/site/dash/menu")
 async def api_dash_menu(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id = b.get("page_id", "main")
-    await db_set_content("_menu", json.dumps(b.get("items", [])), page_id)
-    await broadcast("cms_update", {"key": "_menu", "value": json.dumps(b.get("items", [])), "page_id": page_id})
-    return {"success": True, "key": "_menu", "page_id": page_id}
+    items = b.get("items", [])
+    empties = [] if items else ["menu zapisane, ale 'items' jest puste"]
+    return await save_block(page_id, "_menu", items, b, {"items"}, empties)
 
 @app.post("/api/site/dash/config")
 async def api_dash_config(request: Request, _auth=Depends(require_internal_token)):
     b = await request.json()
     page_id = b.get("page_id", "main")
-    cfg = {k: v for k, v in b.items() if k in ("title", "theme_brand", "theme_accent", "theme_dark", "auto_refresh", "show_header", "show_footer") and v is not None}
-    await db_set_content("_config", json.dumps(cfg), page_id)
-    await broadcast("cms_update", {"key": "_config", "value": json.dumps(cfg), "page_id": page_id})
-    return {"success": True, "key": "_config", "page_id": page_id}
+    cfg_keys = {"title", "theme_brand", "theme_accent", "theme_dark", "auto_refresh", "show_header", "show_footer"}
+    cfg = {k: v for k, v in b.items() if k in cfg_keys and v is not None}
+    empties = [] if cfg else ["config zapisany, ale żadne znane pole nie zostało ustawione"]
+    return await save_block(page_id, "_config", cfg, b, cfg_keys, empties)
 
 @app.post("/api/site/dash/build-report")
 async def api_dash_build_report(request: Request, _auth=Depends(require_internal_token)):
