@@ -387,9 +387,19 @@ async def create_dashboard(request: Request, _auth=Depends(require_internal_toke
     # Set initial content
     for k, v in body.get("content", {}).items():
         await db_set_content(k, v if isinstance(v, str) else json.dumps(v), page_id=dash_id)
-    # `page_id` mirrors `id`: block endpoints (dash_*) address the page by `page_id`,
-    # so return it under that exact name to remove the id/page_id mismatch footgun.
-    return {"success": True, "id": dash_id, "page_id": dash_id, "url": f"{settings.public_base_url}/d/{dash_id}"}
+    # Honesty: per-dashboard password is NOT enforced yet (access_password_hash is dead;
+    # the only real boundary is the global admin session). Don't let a caller believe a
+    # dashboard is protected when it is not — say so loudly instead of silently dropping it.
+    warnings = []
+    access = str(body.get("access_type", "public")).lower()
+    if "password" in body or access in ("password", "private", "protected"):
+        warnings.append(
+            "UWAGA: hasło per-dashboard NIE jest jeszcze egzekwowane — treść jest publicznie "
+            "czytelna przez API niezależnie od access_type. Realna granica to sesja admina. "
+            "NIE traktuj tego panelu jako chronionego hasłem."
+        )
+    return {"success": True, "id": dash_id, "page_id": dash_id,
+            "url": f"{settings.public_base_url}/d/{dash_id}", "warnings": warnings}
 
 @app.get("/api/site/dashboards")
 async def list_dashboards(archived: bool = False, limit: int = 20):
@@ -543,6 +553,24 @@ async def _page_layout(page_id: str) -> list[dict[str, str]]:
     return layout
 
 
+# Mirror of the bot's /internal/execute read-only gate, so a pull block bound to a
+# non-read-only tool is caught at authoring time (loud) instead of silently failing
+# resolve (403) later and leaving a dead tile.
+_RO_DENY = ("create", "update", "delete", "send", "submit", "register", "remove",
+            "toggle", "assign", "revoke", "import", "reload", "execute_tool",
+            "variable", "push", "oauth", "password", "secret", "set_", "_set")
+_RO_ALLOW = ("search", "list", "get", "stats", "summary", "history", "info",
+             "exists", "schema", "status", "poll", "query", "read", "fetch",
+             "count", "dashboard", "time")
+
+
+def _is_readonly_tool(name: str) -> bool:
+    n = (name or "").lower()
+    if any(bad in n for bad in _RO_DENY):
+        return False
+    return any(ok in n for ok in _RO_ALLOW)
+
+
 async def _page_exists(page_id: str) -> bool:
     if page_id == "main":
         return True
@@ -560,6 +588,13 @@ async def save_block(page_id: str, key: str, block: dict, body: dict, known_fiel
     # It is stored on the block as-is; the panel (pull) / refresher (push/event) act on it.
     if isinstance(body.get("source"), dict):
         block["source"] = body["source"]
+        src_tool = body["source"].get("tool")
+        src_mode = body["source"].get("mode", "pull")
+        if src_tool and src_mode == "pull" and not _is_readonly_tool(src_tool):
+            warnings.append(
+                f"source.tool '{src_tool}' nie jest read-only — resolve (pull) odrzuci je (403), "
+                f"blok zostanie pusty. Użyj narzędzia odczytu lub trybu push."
+            )
 
     # 1) Unknown fields — surfaced, not silently swallowed.
     reserved = {"page_id", "key", "source", "order"}
