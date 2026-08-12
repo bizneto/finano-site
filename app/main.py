@@ -508,21 +508,38 @@ async def vault_exists(request: Request, key: str):
 # (read-after-write), reports a layout summary and any warnings — so the caller can
 # close the feedback loop from the response alone instead of re-reading the dashboard.
 
+# Structural/landing keys the renderer treats specially (mirrors static/index.html
+# SYSTEM_KEYS + HERO_KEYS + widgets). They are not agent-composed display blocks.
+_STRUCTURAL_KEYS = {
+    "theme_brand", "theme_accent", "theme_dark", "theme_card", "meta_description",
+    "_section_order", "_config", "_menu", "widgets",
+    "hero_title", "hero_highlight", "hero_description", "hero_buttons",
+}
+
+
 async def _page_layout(page_id: str) -> list[dict[str, str]]:
-    """Blocks in render order (render sorts by key), as [{key, type}]. Meta keys (_*) skipped."""
+    """Display blocks in the SAME order the panel renders them: explicit `_section_order`
+    first, then the remaining blocks alphabetically — mirrors static/index.html so the
+    caller sees the real on-screen sequence, not a guess."""
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT key, value FROM site_content WHERE page_id = ? ORDER BY key", (page_id,))
+        cursor = await db.execute("SELECT key, value FROM site_content WHERE page_id = ?", (page_id,))
         rows = await cursor.fetchall()
+    values = {r["key"]: r["value"] for r in rows}
+    block_keys = [k for k in values if not k.startswith("_") and k not in _STRUCTURAL_KEYS]
+    try:
+        section_order = json.loads(values.get("_section_order") or "[]")
+    except Exception:
+        section_order = []
+    ordered = [k for k in section_order if k in block_keys]
+    final = ordered + sorted(k for k in block_keys if k not in ordered)
     layout = []
-    for r in rows:
-        if r["key"].startswith("_"):
-            continue
+    for k in final:
         try:
-            t = json.loads(r["value"]).get("type", "raw")
+            t = json.loads(values[k]).get("type", "raw")
         except Exception:
             t = "raw"
-        layout.append({"key": r["key"], "type": t})
+        layout.append({"key": k, "type": t})
     return layout
 
 
@@ -730,6 +747,27 @@ async def api_dash_config(request: Request, _auth=Depends(require_internal_token
     cfg = {k: v for k, v in b.items() if k in cfg_keys and v is not None}
     empties = [] if cfg else ["config zapisany, ale żadne znane pole nie zostało ustawione"]
     return await save_block(page_id, "_config", cfg, b, cfg_keys, empties)
+
+@app.post("/api/site/dash/order")
+async def api_dash_order(request: Request, _auth=Depends(require_internal_token)):
+    """Set explicit block order for a page (drives report/presentation sequence).
+    Body: {page_id, order: [key, ...]}. Keys not listed render after, alphabetically."""
+    b = await request.json()
+    page_id = b.get("page_id", "main")
+    order = b.get("order", [])
+    if not isinstance(order, list):
+        return {"success": False, "page_id": page_id, "error": "'order' musi być listą kluczy bloków"}
+    warnings = []
+    if not await _page_exists(page_id):
+        warnings.append(f"strona page_id='{page_id}' nie istnieje")
+    existing = {blk["key"] for blk in await _page_layout(page_id)}
+    for k in order:
+        if k not in existing:
+            warnings.append(f"klucz '{k}' w order nie odpowiada żadnemu blokowi na tej stronie — zostanie zignorowany przy renderze")
+    await db_set_content("_section_order", json.dumps(order), page_id)
+    await broadcast("cms_update", {"key": "_section_order", "value": json.dumps(order), "page_id": page_id})
+    return {"success": True, "page_id": page_id, "order": order, "warnings": warnings, "layout": await _page_layout(page_id)}
+
 
 @app.post("/api/site/dash/build-report")
 async def api_dash_build_report(request: Request, _auth=Depends(require_internal_token)):
