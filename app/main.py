@@ -556,8 +556,13 @@ async def save_block(page_id: str, key: str, block: dict, body: dict, known_fiel
     """Validate, persist, and return an agent-first response for a single block write."""
     warnings: list[str] = []
 
+    # A block may carry a data-source binding ({tool, input, mode: pull|push|event}).
+    # It is stored on the block as-is; the panel (pull) / refresher (push/event) act on it.
+    if isinstance(body.get("source"), dict):
+        block["source"] = body["source"]
+
     # 1) Unknown fields — surfaced, not silently swallowed.
-    reserved = {"page_id", "key"}
+    reserved = {"page_id", "key", "source", "order"}
     for k in body.keys():
         if k not in known_fields and k not in reserved:
             hint = " (czy chodziło o page_id?)" if k == "id" else ""
@@ -747,6 +752,33 @@ async def api_dash_config(request: Request, _auth=Depends(require_internal_token
     cfg = {k: v for k, v in b.items() if k in cfg_keys and v is not None}
     empties = [] if cfg else ["config zapisany, ale żadne znane pole nie zostało ustawione"]
     return await save_block(page_id, "_config", cfg, b, cfg_keys, empties)
+
+@app.post("/api/site/resolve")
+async def api_resolve(request: Request):
+    """Pull mode: resolve a block's data source by running a read-only tool via the bot.
+
+    Enforces the access decision: ONLY an authenticated (password) viewer may pull, so a
+    public dashboard URL never triggers tool calls / data reads. The bot additionally
+    restricts this to read-only tools."""
+    if not verify_session(request):
+        raise HTTPException(401, "pull (odświeżanie ze źródła) wymaga zalogowania — publiczny panel nie odpytuje narzędzi")
+    b = await request.json()
+    tool = b.get("tool", "")
+    tool_input = b.get("input", {}) or {}
+    if not tool:
+        raise HTTPException(400, "pole 'tool' jest wymagane")
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.post(
+                f"{settings.bot_api_url}/internal/execute",
+                json={"tool": tool, "input": tool_input},
+                headers={"X-Internal-Token": settings.internal_api_token},
+            )
+        return JSONResponse(r.json(), status_code=r.status_code)
+    except Exception as e:
+        raise HTTPException(502, f"resolve nieudane: {str(e)[:150]}")
+
 
 @app.post("/api/site/dash/order")
 async def api_dash_order(request: Request, _auth=Depends(require_internal_token)):
