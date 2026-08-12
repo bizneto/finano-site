@@ -614,7 +614,7 @@ function applyCMSUpdate(d) {
 }
 
 // ── Init ──
-async function loadCMS(){const c=await f('/api/site/content?page_id='+currentPage);if(!c)return;Object.assign(content,c);buildPage(content)}
+async function loadCMS(){const c=await f('/api/site/content?page_id='+currentPage);if(!c)return;Object.assign(content,c);buildPage(content);resolvePullBlocks();}
 async function loadStats(){const d=await f('/api/site/public-stats');if(!d)return;
   // If stats section doesn't exist yet — we'll get them from buildPage
   const el=document.getElementById('stat-msgs');if(el)el.textContent=d.messages_today||0}
@@ -628,18 +628,88 @@ function switchView(view, btn) {
   buildPage(content);
 }
 
+// ── Pull-mode blocks: resolve data source client-side ──
+// Only authenticated (password) viewers succeed; public viewers get 401 and the block
+// stays on its seed value. Enforced server-side — the panel just reflects the outcome.
+function getPath(obj, path){ if(path==null) return undefined;
+  return String(path).split('.').reduce((o,k)=> (o==null?undefined:o[k]), obj); }
+
+function applyPullResult(key, blk, result){
+  if(blk.type==='kpi_row' && Array.isArray(blk.items)){
+    blk.items = blk.items.map(it => it.field!==undefined ? {...it, value: String(getPath(result, it.field) ?? it.value)} : it);
+  } else if((blk.type==='status'||blk.type==='progress') && Array.isArray(blk.items)){
+    blk.items = blk.items.map(it => it.field!==undefined ? {...it, value: getPath(result, it.field) ?? it.value} : it);
+  } else if(['markdown','alert','html','code'].includes(blk.type)){
+    for(const fld of ['text','content','html','code']) if(typeof blk[fld]==='string')
+      blk[fld] = blk[fld].replace(/\{\{([\w.]+)\}\}/g, (m,p)=>{ const v=getPath(result,p); return v==null?'':String(v); });
+  } else if(blk.type==='table' && blk.source && blk.source.rows_from){
+    const rows=getPath(result, blk.source.rows_from); if(Array.isArray(rows)) blk.rows=rows;
+  }
+  blk._pull={ok:true, at:Date.now()};
+  content[key]=blk;
+}
+
+let _pullStatus={total:0, ok:0, denied:0, error:0};
+let _pullBusy=false;
+async function resolvePullBlocks(){
+  if(_pullBusy) return; _pullBusy=true;
+  const st={total:0, ok:0, denied:0, error:0}; let changed=false;
+  try{
+    for(const key of Object.keys(content)){
+      let blk=content[key];
+      try{ if(typeof blk==='string') blk=JSON.parse(blk); }catch{ continue; }
+      if(!blk || typeof blk!=='object' || !blk.source || blk.source.mode!=='pull' || !blk.source.tool) continue;
+      st.total++;
+      try{
+        const r=await fetch(API+'/api/site/resolve',{method:'POST',
+          headers:{'Content-Type':'application/json', ...h()},
+          body:JSON.stringify({tool:blk.source.tool, input:blk.source.input||{}})});
+        if(r.status===401){ st.denied++; blk._pull={ok:false,state:'auth'}; content[key]=blk; continue; }
+        if(r.status===403){ st.denied++; blk._pull={ok:false,state:'forbidden'}; content[key]=blk; continue; }
+        const j=await r.json().catch(()=>null);
+        if(!j || j.ok!==true){ st.error++; blk._pull={ok:false,state:'error',msg:(j&&j.error)||('HTTP '+r.status)}; content[key]=blk; continue; }
+        applyPullResult(key, blk, j.result); st.ok++; changed=true;
+      }catch(e){ st.error++; blk._pull={ok:false,state:'error',msg:String(e)}; content[key]=blk; }
+    }
+  } finally { _pullBusy=false; }
+  _pullStatus=st;
+  if(changed) buildPage(content);
+  updateHealthBadge();
+}
+
+// ── WS-health + pull-status badge — a frozen panel must never look healthy ──
+let lastWsMsg=Date.now();
+function wsConnected(){ return (publicWS&&publicWS.readyState===1) || (ws&&ws.readyState===1); }
+function updateHealthBadge(){
+  let el=document.getElementById('ws-health');
+  if(!el){ el=document.createElement('div'); el.id='ws-health';
+    el.style.cssText='position:fixed;bottom:10px;right:12px;z-index:60;font-size:11px;padding:5px 9px;'
+      +'border-radius:8px;font-family:system-ui,sans-serif;backdrop-filter:blur(6px);'
+      +'border:1px solid rgba(255,255,255,.12);pointer-events:none';
+    document.body.appendChild(el); }
+  const conn=wsConnected(); const age=Math.round((Date.now()-lastWsMsg)/1000); const stale=!conn||age>25;
+  const p=_pullStatus;
+  const pullTxt = p.total ? ` · pull ${p.ok}/${p.total}${p.denied?` (${p.denied} zablok.)`:''}${p.error?` (${p.error} błąd)`:''}` : '';
+  el.style.background = stale ? 'rgba(180,30,30,.85)' : 'rgba(20,50,30,.8)';
+  el.style.color = stale ? '#fff' : '#bbf7d0';
+  el.textContent = (conn ? (stale?'⚠ WS cichy':'● live') : '⚠ WS rozłączony') + ` · sygnał ${age}s temu` + pullTxt;
+}
+setInterval(updateHealthBadge, 3000);
+
 loadCMS();
 
 // ── Public WebSocket ──
 function connectPublicWS(){
   const url=`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws/public?page_id=${currentPage}`;
   publicWS=new WebSocket(url);
-  publicWS.onmessage=e=>{try{const msg=JSON.parse(e.data);
-    if(msg.type==='ping')return;
-    if(msg.type==='cms_update'&&msg.data)applyCMSUpdate(msg.data);
-    if(msg.type==='message'){/* live counter updates handled by buildPage */}
+  publicWS.onmessage=e=>{lastWsMsg=Date.now();try{const msg=JSON.parse(e.data);
+    if(msg.type==='ping'){updateHealthBadge();return;}
+    if(msg.type==='cms_update'&&msg.data){applyCMSUpdate(msg.data);}
+    else{ resolvePullBlocks(); }   // event-driven: refresh pull blocks on live data events
+    updateHealthBadge();
   }catch{}};
-  publicWS.onclose=()=>setTimeout(connectPublicWS,5000);
+  publicWS.onopen=()=>{lastWsMsg=Date.now();updateHealthBadge();};
+  publicWS.onclose=()=>{updateHealthBadge();setTimeout(connectPublicWS,5000);};
 }
 connectPublicWS();
 
@@ -687,8 +757,9 @@ function connectWS(){if(ws&&ws.readyState<=1)return;
   ws=new WebSocket(`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws/live?token=${authToken}`);
   ws.onopen=()=>{document.getElementById('ws-status').className='w-2 h-2 rounded-full bg-green-400';document.getElementById('ws-label').textContent='Live'};
   ws.onclose=()=>{document.getElementById('ws-status').className='w-2 h-2 rounded-full bg-gray-500';document.getElementById('ws-label').textContent='Ponowne łączenie...';setTimeout(connectWS,3000)};
-  ws.onmessage=e=>{try{const msg=JSON.parse(e.data);if(msg.type==='ping')return;
-    if(msg.type==='cms_update'&&msg.data){applyCMSUpdate(msg.data);return}
+  ws.onmessage=e=>{lastWsMsg=Date.now();try{const msg=JSON.parse(e.data);if(msg.type==='ping'){updateHealthBadge();return;}
+    if(msg.type==='cms_update'&&msg.data){applyCMSUpdate(msg.data);updateHealthBadge();return}
+    else{ resolvePullBlocks(); }   // event-driven refresh of pull blocks
     if(['message','tool_call','error'].includes(msg.type))handleLiveEvent(msg);
     const feed=document.getElementById('d-live'),el=document.createElement('div');
     el.className='p-2 rounded-lg fade-in';el.style.background='color-mix(in srgb,var(--brand) 10%,transparent)';
