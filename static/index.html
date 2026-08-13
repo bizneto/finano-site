@@ -614,7 +614,17 @@ function applyCMSUpdate(d) {
 }
 
 // ── Init ──
-async function loadCMS(){const c=await f('/api/site/content?page_id='+currentPage);if(!c)return;Object.assign(content,c);buildPage(content);resolvePullBlocks();}
+let _loginReturn=null;
+function showLoginGate(){document.getElementById('landing').classList.add('hidden');document.getElementById('dashboard').classList.add('hidden');const lg=document.getElementById('login');if(lg)lg.classList.remove('hidden');const p=document.getElementById('login-pass');if(p)p.focus();}
+async function loadCMS(){
+  let r; try{ r=await fetch(API+'/api/site/content?page_id='+currentPage,{headers:h()}); }catch{ return; }
+  if(r.status===401){ // private dashboard — show the login window (like dash.finano.ai)
+    _loginReturn=()=>{document.getElementById('login').classList.add('hidden');document.getElementById('landing').classList.remove('hidden');loadCMS();};
+    showLoginGate(); return;
+  }
+  const c=await r.json().catch(()=>null); if(!c)return;
+  Object.assign(content,c);buildPage(content);resolvePullBlocks();
+}
 async function loadStats(){const d=await f('/api/site/public-stats');if(!d)return;
   // If stats section doesn't exist yet — we'll get them from buildPage
   const el=document.getElementById('stat-msgs');if(el)el.textContent=d.messages_today||0}
@@ -721,7 +731,8 @@ async function doLogin(e){e.preventDefault();
   const r=await f('/api/site/login',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({password:document.getElementById('login-pass').value,totp_code:document.getElementById('login-totp').value})});
   if(r?.token){authToken=r.token;localStorage.setItem('finano_token',authToken);
-    document.getElementById('login').classList.add('hidden');showDashboard()}
+    document.getElementById('login').classList.add('hidden');
+    if(_loginReturn){const cb=_loginReturn;_loginReturn=null;cb();}else{showDashboard();}}
   else{const el=document.getElementById('login-error');el.textContent=r?.error||'Błąd';el.classList.remove('hidden')}}
 function doLogout(){authToken=null;localStorage.removeItem('finano_token');if(ws)ws.close();
   document.getElementById('dashboard').classList.add('hidden');document.getElementById('login').classList.add('hidden');document.getElementById('landing').classList.remove('hidden')}

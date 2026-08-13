@@ -277,7 +277,19 @@ async def startup():
 # ── Public API ──
 
 @app.get("/api/site/content")
-async def get_content(page_id: str = "main"):
+async def get_content(request: Request, page_id: str = "main"):
+    # Private dashboards must not serve content to anonymous viewers — return 401 so the
+    # SPA shows the login window (real server-side gate, not "load then hide with CSS").
+    # Internal callers (the bot, via X-Internal-Token) and logged-in admins are allowed.
+    if page_id != "main":
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute("SELECT access_type FROM dashboards WHERE id = ?", (page_id,))
+            row = await cur.fetchone()
+        if row and (row["access_type"] or "public") != "public":
+            internal_ok = settings.internal_api_token and request.headers.get("x-internal-token") == settings.internal_api_token
+            if not internal_ok and not verify_session(request):
+                raise HTTPException(401, "Panel prywatny — zaloguj się")
     return await db_get_content(page_id=page_id)
 
 @app.get("/api/site/public-stats")
@@ -392,12 +404,14 @@ async def create_dashboard(request: Request, _auth=Depends(require_internal_toke
     # dashboard is protected when it is not — say so loudly instead of silently dropping it.
     warnings = []
     access = str(body.get("access_type", "public")).lower()
-    if "password" in body or access in ("password", "private", "protected"):
+    if access != "public" or "password" in body:
         warnings.append(
-            "UWAGA: hasło per-dashboard NIE jest jeszcze egzekwowane — treść jest publicznie "
-            "czytelna przez API niezależnie od access_type. Realna granica to sesja admina. "
-            "NIE traktuj tego panelu jako chronionego hasłem."
+            "Panel prywatny: treść jest bramkowana server-side — anonim dostaje okno logowania, "
+            "a dane oddawane są dopiero po zalogowaniu globalną sesją admina (hasło dash.finano.ai). "
+            "Uwaga: to JEDNO wspólne hasło, nie osobne per-panel (kto zna hasło admina, widzi każdy panel prywatny)."
         )
+        if "password" in body:
+            warnings.append("pole 'password' jest ignorowane — nie ma osobnych haseł per-panel (dostęp = globalna sesja admina)")
     return {"success": True, "id": dash_id, "page_id": dash_id,
             "url": f"{settings.public_base_url}/d/{dash_id}", "warnings": warnings}
 
